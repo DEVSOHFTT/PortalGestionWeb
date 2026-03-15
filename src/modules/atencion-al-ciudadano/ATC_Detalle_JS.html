@@ -63,6 +63,17 @@
       const modulo = this.estadoBandeja.modulo || 'MisCasos';
       cargarModulo(modulo);
     },
+    
+    abrirFichaCiudadano: function() {
+      const idCiu = this.estadoDetalle.idCiudadano;
+      if (!idCiu) {
+        Portal_Core.mostrarToast('warning', 'Sin Ciudadano',
+          'No se pudo identificar al ciudadano vinculado a este caso.');
+        return;
+      }
+      this.estadoFicha.idCasoOrigen = this.estadoDetalle.idCaso;
+      cargarModulo('FichaCiudadano', idCiu);
+    },
 
     // =========================================================
     // PINTADO DE LA FICHA
@@ -188,18 +199,18 @@
       if (!elBadge) return;
 
       const MAPA = {
-        'PENDIENTE':  { icon: 'fa-clock',        bg: 'var(--warning-bg)',    color: 'var(--warning)',   border: 'var(--warning)' },
-        'ASIGNADO':   { icon: 'fa-user-check',   bg: 'var(--primary-light)', color: 'var(--primary)',   border: 'var(--primary)' },
-        'EN PROCESO': { icon: 'fa-play-circle',  bg: 'var(--success-bg)',    color: 'var(--success)',   border: 'var(--success)' },
-        'DERIVADO':   { icon: 'fa-share',        bg: '#f3f0f0',              color: 'var(--def-brown)', border: 'var(--def-brown)' },
-        'FINALIZADO': { icon: 'fa-check-double', bg: '#dcfce7',              color: '#10b981',          border: '#10b981' }
+        'PENDIENTE':  { icon: 'fa-clock',        bg: 'var(--warning-bg)',    color: 'var(--warning)' },
+        'ASIGNADO':   { icon: 'fa-user-check',   bg: 'var(--primary-light)', color: 'var(--primary)' },
+        'EN PROCESO': { icon: 'fa-play-circle',  bg: 'var(--success-bg)',    color: 'var(--success)' },
+        'DERIVADO':   { icon: 'fa-share',        bg: '#f3f0ed',              color: 'var(--def-brown)' },
+        'FINALIZADO': { icon: 'fa-check-double', bg: 'var(--success-bg)',    color: 'var(--success)' }
       };
 
-      const cfg = MAPA[estadoKey] || { icon: 'fa-circle', bg: '#f1f5f9', color: '#64748b', border: '#64748b' };
-      elBadge.innerHTML         = `<i class="fas ${cfg.icon}"></i> ${estadoKey}`;
-      elBadge.style.background  = cfg.bg;
-      elBadge.style.color       = cfg.color;
-      elBadge.style.border      = `1px solid ${cfg.border}`;
+      const cfg = MAPA[estadoKey] || { icon: 'fa-circle', bg: '#f1f5f9', color: '#64748b' };
+      elBadge.innerHTML        = `<i class="fas ${cfg.icon}" style="font-size:0.65rem;"></i> ${estadoKey}`;
+      elBadge.style.background = cfg.bg;
+      elBadge.style.color      = cfg.color;
+      elBadge.style.border     = 'none';
     },
 
     _configurarBotonesDetalle: function(gestion) {

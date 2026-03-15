@@ -27,7 +27,7 @@ const DB_MAP = {
 
 const ESTADOS = {
   // FIX: Solo mantenemos los 4 estados activos de la regla de negocio
-  RECEPCION: { ASIGNADO: 1, DERIVADO: 2, FINALIZADO: 3, PENDIENTE: 4 },
+  RECEPCION: { ASIGNADO: 1, DERIVADO: 2, FINALIZADO: 3, PENDIENTE: 4, EN_PROCESO: 5 },
   EXPEDIENTE: { ABIERTO: 1, CERRADO: 2 },
   ACTUACION: { INICIADA: 1, SUSPENDIDA: 2, FINALIZADA: 3, ANULADA: 4 }
 };

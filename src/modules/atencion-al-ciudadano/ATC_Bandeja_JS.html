@@ -200,16 +200,19 @@
     // =========================================================
     // RENDERIZADO DE LA GRILLA
     // =========================================================
+    
     renderizarBandeja: function(lista) {
       const box = document.getElementById('dashboard-content');
       if (!box) return;
 
       if (!lista || lista.length === 0) {
         box.innerHTML = `
-          <div style="text-align:center; padding:60px; color:var(--text-muted);
-                      background:white; border-radius:12px; border:1px solid var(--border-soft);">
-            <i class="fas fa-filter fa-3x" style="opacity:0.2; margin-bottom:15px;"></i>
-            <p style="font-weight:600;">No se encontraron casos con los filtros aplicados.</p>
+          <div style="text-align:center; padding:80px 40px; color:var(--text-muted);
+                      background:var(--bg-surface); border-radius:var(--radius-lg);
+                      border:1px dashed var(--border-hard);">
+            <i class="fas fa-inbox fa-3x" style="opacity:0.15; margin-bottom:16px;"></i>
+            <p style="font-weight:700; font-size:1rem; margin-bottom:4px; color:var(--text-main);">Sin resultados</p>
+            <p style="font-size:0.85rem;">No se encontraron casos con los filtros aplicados.</p>
           </div>`;
         return;
       }
@@ -219,129 +222,131 @@
         if (!termino || !texto) return texto || '';
         return String(texto).replace(
           new RegExp(`(${termino})`, 'gi'),
-          `<mark style="background-color:#fef08a; color:#854d0e; padding:0 2px; border-radius:2px;">$1</mark>`
+          `<mark style="background:var(--warning-bg); color:var(--warning); padding:1px 3px; border-radius:3px; font-weight:700;">$1</mark>`
         );
       };
 
       const COLORES_ESTADO = {
-        'PENDIENTE':  { color: 'var(--warning)',   bg: 'var(--warning-bg)',   icon: 'fa-clock' },
+        'PENDIENTE':  { color: 'var(--warning)',   bg: 'var(--warning-bg)',    icon: 'fa-clock' },
         'ASIGNADO':   { color: 'var(--primary)',   bg: 'var(--primary-light)', icon: 'fa-user-check' },
-        'EN PROCESO': { color: 'var(--success)',   bg: 'var(--success-bg)',   icon: 'fa-play-circle' },
-        'DERIVADO':   { color: 'var(--def-brown)', bg: '#f3f0f0',             icon: 'fa-share' },
-        'FINALIZADO': { color: '#10b981',          bg: '#dcfce7',             icon: 'fa-check-double' }
+        'EN PROCESO': { color: 'var(--success)',   bg: 'var(--success-bg)',    icon: 'fa-play-circle' },
+        'DERIVADO':   { color: 'var(--def-brown)', bg: '#f3f0ed',             icon: 'fa-share' },
+        'FINALIZADO': { color: 'var(--success)',   bg: 'var(--success-bg)',    icon: 'fa-check-double' }
       };
 
       box.innerHTML = lista.map(c => {
         const estadoKey = c.estado.toUpperCase().trim();
-        const { color: colorEstado, bg: bgEstado, icon: iconEstado } =
-          COLORES_ESTADO[estadoKey] || { color: '#64748b', bg: '#f1f5f9', icon: 'fa-circle' };
+        const { color: cE, bg: bgE, icon: iE } =
+          COLORES_ESTADO[estadoKey] || { color: 'var(--text-muted)', bg: '#f1f5f9', icon: 'fa-question-circle' };
 
         let nombreLimpio = c.ciudadano.replace(/^[\s,\-]+/g, '');
-        const esOrg     = c.dni && c.dni.length > 8;
-        const partes    = c.fecha.split(' ');
-        const fecha     = partes[0] || '';
-        const hora      = partes[1] ? partes[1] + ' hs' : '';
+        const esOrg      = c.dni && c.dni.length > 8;
+        const partes     = c.fecha.split(' ');
+        const fecha      = partes[0] || '';
+        const hora       = partes[1] ? partes[1].substring(0, 5) + ' hs' : '';
 
-        // Expediente
         const expTag = c.expediente
-          ? `<span style="font-size:0.72rem; font-weight:700; padding:2px 8px; border-radius:10px;
-                          background:#e0f2fe; color:#0369a1; border:1px solid #bae6fd;
-                          display:inline-flex; align-items:center; gap:4px;">
-               <i class="fas fa-folder-open"></i> EXP-${c.expediente.substring(0,6).toUpperCase()}
+          ? `<span style="display:inline-flex; align-items:center; gap:4px; font-size:0.72rem;
+                          padding:3px 8px; border-radius:6px; font-weight:700;
+                          background:var(--success-bg); color:var(--success);">
+               <i class="fas fa-folder"></i> ${c.expediente}
              </span>`
           : '';
 
-        // Área y agente — si no hay área pero hay agente asignado,
-        // mostramos el agente con ícono específico (caso asignado a persona directamente)
-        const areaLabel  = c.area && c.area !== 'Sin Asignar' && c.area !== 'Sin Área'
-          ? `<span style="display:inline-flex; align-items:center; gap:5px; font-size:0.8rem;
-                          color:var(--primary); font-weight:700;">
-               <i class="fas fa-building" style="opacity:0.7;"></i> ${resaltar(c.area)}
+        const catTag = c.categoria && c.categoria !== 'S/D'
+          ? `<span style="display:inline-flex; align-items:center; gap:4px; font-size:0.72rem;
+                          padding:3px 10px; border-radius:6px; font-weight:700;
+                          background:var(--warning-bg); color:var(--warning);
+                          text-transform:uppercase; letter-spacing:0.3px;">
+               <i class="fas fa-tag"></i> ${c.categoria}
              </span>`
-          : `<span style="display:inline-flex; align-items:center; gap:5px; font-size:0.75rem;
-                          color:var(--text-muted); font-style:italic;">
-               <i class="fas fa-building" style="opacity:0.4;"></i> Sin área asignada
-             </span>`;
-
-        const agenteLabel = c.agente && c.agente !== 'Sin Asignar'
-          ? `<span style="display:inline-flex; align-items:center; gap:5px; font-size:0.8rem;
-                          color:var(--text-main); font-weight:600;">
-               <i class="fas fa-user-tie" style="color:var(--text-muted); opacity:0.7;"></i>
-               ${resaltar(c.agente)}
-             </span>`
-          : `<span style="display:inline-flex; align-items:center; gap:5px; font-size:0.75rem;
-                          color:var(--warning); font-weight:700;">
-               <i class="fas fa-user-clock"></i> Sin responsable
-             </span>`;
+          : '';
 
         return `
           <div onclick="cargarModulo('DetalleCaso', '${c.id}')"
-               style="background:white; border:1px solid var(--border-soft); border-radius:14px;
-                      padding:18px 20px; margin-bottom:12px; cursor:pointer;
-                      transition:all 0.2s ease; box-shadow:var(--shadow-sm);
-                      border-left:4px solid ${colorEstado}; display:grid;
-                      grid-template-columns:110px 1fr auto; gap:16px; align-items:center;"
-               onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='var(--shadow-md)'"
-               onmouseout="this.style.transform=''; this.style.boxShadow='var(--shadow-sm)'">
+               style="background:var(--bg-surface); border:1px solid var(--border-soft);
+                      border-radius:14px; padding:0; margin-bottom:12px; cursor:pointer;
+                      transition:all 0.2s cubic-bezier(0.4,0,0.2,1);
+                      box-shadow:var(--shadow-sm); overflow:hidden; display:flex;"
+               onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='var(--shadow-md)'; this.style.borderColor='var(--border-hard)'"
+               onmouseout="this.style.transform=''; this.style.boxShadow='var(--shadow-sm)'; this.style.borderColor='var(--border-soft)'">
 
-            <!-- Columna 1: ID + fecha -->
-            <div style="display:flex; flex-direction:column; gap:4px;">
-              <span style="font-family:monospace; font-size:0.85rem; font-weight:800;
-                           color:${colorEstado}; letter-spacing:0.5px;">
-                #${c.id.substring(0,8).toUpperCase()}
-              </span>
-              <span style="font-size:0.75rem; color:var(--text-muted); font-weight:600;">
-                <i class="far fa-calendar-alt" style="margin-right:3px;"></i>${fecha}
-              </span>
-              ${hora ? `<span style="font-size:0.72rem; color:var(--text-muted);">
-                          <i class="far fa-clock" style="margin-right:3px;"></i>${hora}
-                        </span>` : ''}
-            </div>
+            <!-- Barra lateral de estado -->
+            <div style="width:5px; flex-shrink:0; background:${cE};"></div>
 
-            <!-- Columna 2: ciudadano + categoría + responsable -->
-            <div style="min-width:0; display:flex; flex-direction:column; gap:6px;">
-              <div style="display:flex; align-items:center; gap:8px;">
-                <div style="width:30px; height:30px; border-radius:8px; flex-shrink:0;
+            <!-- Contenido -->
+            <div style="flex:1; padding:14px 18px; display:grid;
+                        grid-template-columns:1fr auto; gap:8px 16px; align-items:start;">
+
+              <!-- CELDA SUPERIOR IZQUIERDA: Ciudadano -->
+              <div style="display:flex; align-items:center; gap:10px;">
+                <div style="width:36px; height:36px; border-radius:8px; flex-shrink:0;
                             background:${esOrg ? 'var(--warning-bg)' : 'var(--primary-light)'};
                             color:${esOrg ? 'var(--def-orange)' : 'var(--primary)'};
                             display:flex; align-items:center; justify-content:center; font-size:0.85rem;">
                   <i class="fas ${esOrg ? 'fa-building' : 'fa-user'}"></i>
                 </div>
                 <div style="min-width:0;">
-                  <div style="font-weight:800; color:var(--text-main); font-size:0.95rem;
+                  <div style="font-weight:700; font-size:0.92rem; color:var(--text-main);
                               white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
                     ${resaltar(nombreLimpio)}
                   </div>
-                  <div style="font-size:0.75rem; color:var(--text-muted);">
-                    <i class="fas fa-id-card" style="margin-right:3px;"></i>
-                    ${resaltar(c.dni || 'S/D')}
+                  <div style="font-size:0.78rem; color:var(--text-muted); display:flex; align-items:center; gap:4px;">
+                    <i class="fas fa-id-card" style="opacity:0.5; font-size:0.7rem;"></i>
+                    ${c.dni ? resaltar(c.dni) : 'Sin DNI'}
                   </div>
                 </div>
               </div>
-              <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-                <span style="background:var(--primary-light); color:var(--primary); padding:2px 10px;
-                             border-radius:10px; font-size:0.75rem; font-weight:700;
-                             white-space:nowrap; display:inline-flex; align-items:center; gap:4px;">
-                  <i class="fas fa-tag"></i> ${resaltar(c.categoria)}
-                </span>
-                ${expTag}
-              </div>
-              <div style="display:flex; flex-direction:column; gap:3px;">
-                ${areaLabel}
-                ${agenteLabel}
-              </div>
-            </div>
 
-            <!-- Columna 3: estado -->
-            <div style="display:flex; flex-direction:column; align-items:flex-end; gap:6px; flex-shrink:0;">
-              <span style="font-size:0.8rem; font-weight:800; padding:6px 14px; border-radius:20px;
-                           background:${bgEstado}; color:${colorEstado}; white-space:nowrap;
-                           border:1px solid ${colorEstado}; display:flex; align-items:center; gap:6px;">
-                <i class="fas ${iconEstado}"></i> ${c.estado}
-              </span>
+              <!-- CELDA SUPERIOR DERECHA: Badge de estado -->
+              <div style="display:flex; align-items:center; gap:5px; justify-self:end;
+                          padding:5px 12px; border-radius:20px; font-size:0.72rem;
+                          font-weight:700; text-transform:uppercase; letter-spacing:0.3px;
+                          background:${bgE}; color:${cE}; white-space:nowrap; align-self:center;">
+                <i class="fas ${iE}" style="font-size:0.65rem;"></i>
+                ${c.estado}
+              </div>
+
+              <!-- CELDA INFERIOR: Metadatos distribuidos -->
+              <div style="grid-column:1 / -1; display:flex; align-items:center; gap:10px;
+                          flex-wrap:wrap; padding-left:46px;">
+
+                <span style="font-family:'Fira Mono','Courier New',monospace; font-size:0.78rem;
+                             font-weight:700; color:${cE}; letter-spacing:0.3px;">
+                  #${c.id.substring(0,8).toUpperCase()}
+                </span>
+
+                <span style="width:1px; height:14px; background:var(--border-soft);"></span>
+
+                <span style="font-size:0.75rem; color:var(--text-muted); font-weight:500;
+                             display:inline-flex; align-items:center; gap:4px;">
+                  <i class="far fa-calendar-alt" style="opacity:0.5;"></i>
+                  ${fecha}${hora ? ' · ' + hora : ''}
+                </span>
+
+                ${catTag ? '<span style="width:1px; height:14px; background:var(--border-soft);"></span>' + catTag : ''}
+
+                ${expTag ? '<span style="width:1px; height:14px; background:var(--border-soft);"></span>' + expTag : ''}
+
+                ${c.area && c.area !== 'Sin Asignar'
+                  ? '<span style="width:1px; height:14px; background:var(--border-soft);"></span>' +
+                    `<span style="font-size:0.75rem; color:var(--text-muted); display:inline-flex; align-items:center; gap:4px;">
+                       <i class="fas fa-building" style="opacity:0.5; font-size:0.7rem;"></i>${c.area}
+                     </span>`
+                  : ''}
+
+                ${c.agente && c.agente !== 'Sin Asignar'
+                  ? '<span style="width:1px; height:14px; background:var(--border-soft);"></span>' +
+                    `<span style="font-size:0.75rem; color:var(--text-muted); display:inline-flex; align-items:center; gap:4px;">
+                       <i class="fas fa-user-tie" style="opacity:0.5; font-size:0.7rem;"></i>${resaltar(c.agente)}
+                     </span>`
+                  : ''}
+              </div>
             </div>
           </div>`;
       }).join('');
+
+      this.renderizarPaginacion();
     },
 
     // =========================================================
