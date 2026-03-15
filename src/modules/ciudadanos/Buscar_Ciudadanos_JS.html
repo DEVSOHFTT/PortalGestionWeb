@@ -1,0 +1,584 @@
+<script>
+  Object.assign(window.ATC_App, {
+
+    iniciarBuscarCiudadano: function() {
+      if (this.temporizadores.bandeja) clearInterval(this.temporizadores.bandeja);
+      document.getElementById('ruta-actual').innerText = 'Buscar Ciudadano';
+      
+      this.estadoNuevaRecepcion.ciudadanoActual = null;
+      this.estadoNuevaRecepcion.casosCiudadanoActual = [];
+      
+      document.getElementById('loader-nr').classList.add('hidden');
+      document.getElementById('form-ciudadano').classList.remove('hidden');
+      
+      document.getElementById('resumen-ciudadano').classList.add('hidden');
+      document.getElementById('wrapper-formularios').classList.remove('hidden');
+      
+      document.getElementById('nr-busqueda-dni').value = '';
+      document.getElementById('nr-msg-ciudadano').innerText = '';
+      document.getElementById('nr-ciudadano-id').value = '';
+      
+      const badgeContador = document.getElementById('badge-contador-casos');
+      if(badgeContador) badgeContador.classList.add('hidden');
+      document.getElementById('contenedor-historial-ciudadano').innerHTML = `
+        <div class="historial-vacio">
+           <i class="fas fa-search-location fa-3x" style="opacity:0.1; margin-bottom:15px;"></i>
+           <p>Ingrese un Documento o CUIT para auditar antecedentes</p>
+        </div>`;
+      
+      document.getElementById('btn-continuar-recepcion').classList.add('hidden');
+      document.getElementById('contenedor-locacion').style.opacity = '1';
+
+      const inputs = ['nr-ciu-tipo-entidad', 'nr-ciu-nombre', 'nr-ciu-apellido', 'nr-ciu-cuil', 'nr-ciu-dni', 'nr-ciu-fecha-nac', 'nr-ciu-genero', 'nr-ciu-tel', 'nr-ciu-email', 'nr-ciu-calle', 'nr-ciu-altura', 'nr-ciu-piso', 'nr-ciu-dpto', 'nr-ciu-barrio', 'nr-ciu-otra-prov'];
+      inputs.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) { 
+           if(el.type === 'checkbox') el.checked = false; else el.value = ''; 
+           el.disabled = true; 
+           el.classList.remove('input-locked');
+        }
+      });
+
+      const cacheATC = Memoria.leer('diccionariosATC');
+      if (cacheATC) {
+        if(cacheATC.barrios) Portal_Core.poblarSelect('nr-ciu-barrio', cacheATC.barrios);
+        if(cacheATC.tipos_entidad) Portal_Core.poblarSelect('nr-ciu-tipo-entidad', cacheATC.tipos_entidad);
+      } else {
+        // Fallback: Si se entró directo a "Buscar Ciudadano" sin pasar por bandeja
+        google.script.run
+           .withSuccessHandler(res => {
+               if(res && res.success) {
+                   Memoria.guardar('diccionariosATC', res.data);
+                   Portal_Core.poblarSelect('nr-ciu-barrio', res.data.barrios);
+                   Portal_Core.poblarSelect('nr-ciu-tipo-entidad', res.data.tipos_entidad);
+               }
+           }).obtenerDiccionariosATCBackend();
+      }
+
+      setTimeout(() => document.getElementById('nr-busqueda-dni').focus(), 100);
+    },
+
+    buscarCiudadano: function() {
+      const valorBuscado = document.getElementById('nr-busqueda-dni').value.trim();
+      const msg = document.getElementById('nr-msg-ciudadano');
+      const btnContinuar = document.getElementById('btn-continuar-recepcion');
+      
+      if(!valorBuscado) return Portal_Core.mostrarToast('warning', 'Dato requerido', 'Por favor, ingrese un Documento para buscar.');
+      
+      msg.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Buscando en el Padrón Central...'; 
+      msg.style.color = 'var(--text-muted)';
+      
+      document.getElementById('contenedor-historial-ciudadano').innerHTML = `
+        <div class="historial-vacio">
+           <i class="fas fa-spinner fa-spin fa-2x" style="color:var(--primary); margin-bottom:15px;"></i>
+           <p>Analizando gestiones previas...</p>
+        </div>`;
+        
+      btnContinuar.classList.add('hidden');
+      this.estadoNuevaRecepcion.ciudadanoActual = null;
+      this.estadoNuevaRecepcion.casosCiudadanoActual = [];
+
+      google.script.run
+        .withSuccessHandler(res => {
+          const inputs = ['nr-ciu-tipo-entidad', 'nr-ciu-nombre', 'nr-ciu-apellido', 'nr-ciu-cuil', 'nr-ciu-dni', 'nr-ciu-fecha-nac', 'nr-ciu-genero', 'nr-ciu-tel', 'nr-ciu-email', 'nr-ciu-calle', 'nr-ciu-altura', 'nr-ciu-piso', 'nr-ciu-dpto', 'nr-ciu-barrio', 'nr-ciu-otra-prov'];
+
+          if(res.encontrado) {
+            msg.innerHTML = ''; 
+            
+            document.getElementById('nr-ciudadano-id').value = res.data.ciudadano_id;
+            document.getElementById('nr-ciu-tipo-entidad').value = res.data.tipo_entidad_id || '1';
+            document.getElementById('nr-ciu-nombre').value = res.data.nombre || '';
+            document.getElementById('nr-ciu-apellido').value = res.data.apellido || '';
+            document.getElementById('nr-ciu-cuil').value = res.data.cuil || '';
+            document.getElementById('nr-ciu-dni').value = res.data.dni || valorBuscado;
+            document.getElementById('nr-ciu-fecha-nac').value = res.data.fecha_nacimiento || '';
+            document.getElementById('nr-ciu-genero').value = res.data.genero_id || '';
+            document.getElementById('nr-ciu-tel').value = res.data.telefono || '';
+            document.getElementById('nr-ciu-email').value = res.data.email || '';
+            document.getElementById('nr-ciu-calle').value = res.data.calle || '';
+            document.getElementById('nr-ciu-altura').value = res.data.altura || '';
+            document.getElementById('nr-ciu-piso').value = res.data.piso || '';
+            document.getElementById('nr-ciu-dpto').value = res.data.dpto || '';
+            document.getElementById('nr-ciu-barrio').value = res.data.barrio_id || '';
+            
+            inputs.forEach(id => document.getElementById(id).disabled = true);
+            this.cambiarTipoEntidad();
+
+            let nombreLimpio = res.data.nombre;
+            if (res.data.apellido && res.data.apellido !== '-') nombreLimpio = res.data.apellido + ', ' + res.data.nombre;
+
+            document.getElementById('resumen-nombre').innerText = nombreLimpio;
+            document.getElementById('resumen-cuil').innerText = res.data.cuil || res.data.dni || valorBuscado;
+            document.getElementById('resumen-contacto').innerText = res.data.telefono || res.data.email || 'Sin contacto';
+            
+            document.getElementById('wrapper-formularios').classList.add('hidden');
+            document.getElementById('resumen-ciudadano').classList.remove('hidden');
+
+            this.estadoNuevaRecepcion.casosCiudadanoActual = res.data.casos_previos || [];
+            this.dibujarHistorialCiudadano(this.estadoNuevaRecepcion.casosCiudadanoActual);
+            
+            Portal_Core.mostrarToast('success', 'Entidad Encontrada', 'Se han recuperado los datos y antecedentes.');
+          } else {
+            msg.innerHTML = '<i class="fas fa-user-plus"></i> Registro Nuevo. Complete la Ficha.'; 
+            msg.style.color = 'var(--warning)';
+            document.getElementById('nr-ciudadano-id').value = "";
+            document.getElementById('resumen-ciudadano').classList.add('hidden');
+            document.getElementById('wrapper-formularios').classList.remove('hidden');
+            
+            inputs.forEach(id => {
+              const el = document.getElementById(id);
+              if(el.type === 'checkbox') el.checked = false; else el.value = '';
+              if (id !== 'nr-ciu-dni') el.disabled = false; 
+            });
+            document.getElementById('contenedor-locacion').style.opacity = '1';
+            
+            let tipoEntidadDefecto = '1'; 
+            if (valorBuscado.length === 11 && ['30', '33', '34'].includes(valorBuscado.substring(0, 2))) tipoEntidadDefecto = '2'; 
+            document.getElementById('nr-ciu-tipo-entidad').value = tipoEntidadDefecto;
+            
+            if (valorBuscado.length === 11) {
+                document.getElementById('nr-ciu-cuil').value = valorBuscado;
+                document.getElementById('nr-ciu-dni').value = parseInt(valorBuscado.substring(2, 10), 10).toString();
+            } else {
+                document.getElementById('nr-ciu-dni').value = valorBuscado;
+            }
+            
+            this.cambiarTipoEntidad();
+            
+            const badgeContador = document.getElementById('badge-contador-casos');
+            if(badgeContador) badgeContador.classList.add('hidden');
+            document.getElementById('contenedor-historial-ciudadano').innerHTML = `<div class="historial-vacio"><i class="fas fa-user-plus fa-3x" style="opacity:0.2; margin-bottom:15px; color: var(--primary);"></i><p>Es la primera vez que esta entidad se contacta.</p></div>`;
+            document.getElementById('nr-ciu-nombre').focus();
+            Portal_Core.mostrarToast('info', 'Nuevo Registro', 'Por favor, complete los datos de la entidad.');
+          }
+          btnContinuar.classList.remove('hidden');
+        })
+        .withFailureHandler(err => {
+          msg.innerHTML = '';
+          Portal_Core.mostrarToast('error', 'Fallo de Conexión', 'No se pudo conectar con el Padrón.');
+          document.getElementById('contenedor-historial-ciudadano').innerHTML = `<div class="historial-vacio" style="color: var(--danger);"><i class="fas fa-exclamation-triangle fa-2x" style="margin-bottom:15px;"></i><p>Fallo de red al buscar el historial.</p></div>`;
+        })
+        .buscarCiudadanoBackend(valorBuscado);
+    },
+
+    cambiarTipoEntidad: function() {
+      const tipo = document.getElementById('nr-ciu-tipo-entidad').value;
+      const esCiudadano = (tipo === '1' || tipo === ''); 
+      const esNuevo = !document.getElementById('nr-ciudadano-id').value;
+      const valorBuscado = document.getElementById('nr-busqueda-dni').value.trim();
+      
+      const idsOcultar = ['nr-box-dni', 'nr-box-apellido', 'nr-box-nacimiento', 'nr-box-genero'];
+      const inputsObligatorios = ['nr-ciu-dni', 'nr-ciu-apellido', 'nr-ciu-fecha-nac', 'nr-ciu-genero'];
+      const lblNombre = document.getElementById('lbl-nombre');
+      
+      const inputDni = document.getElementById('nr-ciu-dni');
+      const inputCuil = document.getElementById('nr-ciu-cuil');
+
+      if (esCiudadano) {
+        idsOcultar.forEach(id => document.getElementById(id).classList.remove('hidden'));
+        inputsObligatorios.forEach(id => document.getElementById(id).required = true);
+        lblNombre.innerHTML = 'Nombres <span class="req">*</span>';
+        
+        document.getElementById('nr-box-cuil').style.order = 5;
+        document.getElementById('nr-box-tel').style.order = 8;
+        document.getElementById('lbl-cuil').innerHTML = 'CUIL <span class="req">*</span>';
+
+        if (esNuevo) {
+            inputDni.value = valorBuscado.length === 11 ? parseInt(valorBuscado.substring(2, 10), 10).toString() : valorBuscado;
+            inputDni.disabled = true; inputDni.classList.add('input-locked');
+            inputCuil.disabled = false; inputCuil.classList.remove('input-locked');
+            if (valorBuscado.length === 11 && !inputCuil.value) inputCuil.value = valorBuscado;
+        } else {
+            inputDni.classList.remove('input-locked'); inputCuil.classList.remove('input-locked');
+        }
+      } else {
+        idsOcultar.forEach(id => document.getElementById(id).classList.add('hidden'));
+        inputsObligatorios.forEach(id => {
+            const el = document.getElementById(id); el.required = false;
+            if (esNuevo && id !== 'nr-ciu-dni') el.value = ''; 
+        });
+        lblNombre.innerHTML = 'Razón Social <span class="req">*</span>';
+        document.getElementById('nr-box-cuil').style.order = 2;
+        document.getElementById('nr-box-tel').style.order = 4;
+        document.getElementById('lbl-cuil').innerHTML = 'CUIT <span class="req" title="Fijo por seguridad">*</span>';
+
+        if (esNuevo) {
+            inputCuil.value = valorBuscado;
+            inputCuil.disabled = true; inputCuil.classList.add('input-locked');
+        } else {
+            inputCuil.classList.remove('input-locked');
+        }
+      }
+    },
+
+    extraerDniDeCuil: function() {
+      const cuil = document.getElementById('nr-ciu-cuil').value.trim();
+      const tipo = document.getElementById('nr-ciu-tipo-entidad').value;
+      const inputDni = document.getElementById('nr-ciu-dni');
+      if (tipo === '1' && cuil.length === 11 && !inputDni.value) {
+          inputDni.value = parseInt(cuil.substring(2, 10), 10).toString();
+      }
+    },
+
+    toggleFormulariosDatos: function() { document.getElementById('wrapper-formularios').classList.toggle('hidden'); },
+
+    toggleOtraProvincia: function() {
+      const chk = document.getElementById('nr-ciu-otra-prov').checked;
+      ['nr-ciu-calle', 'nr-ciu-altura', 'nr-ciu-piso', 'nr-ciu-dpto', 'nr-ciu-barrio'].forEach(id => {
+        const el = document.getElementById(id); el.disabled = chk; if(chk) el.value = ''; 
+      });
+      document.getElementById('contenedor-locacion').style.opacity = chk ? '0.4' : '1';
+    },
+
+    dibujarHistorialCiudadano: function(casos) {
+      const box = document.getElementById('contenedor-historial-ciudadano');
+      const badgeContador = document.getElementById('badge-contador-casos');
+      
+      if (badgeContador) {
+        badgeContador.innerText = `${casos ? casos.length : 0} CASOS`;
+        badgeContador.classList.remove('hidden');
+      }
+
+      if (!casos || casos.length === 0) {
+         box.innerHTML = `<div class="historial-vacio"><i class="fas fa-folder-open fa-3x" style="opacity:0.2; margin-bottom:15px;"></i><p>Sin gestiones previas registradas.</p></div>`;
+         return;
+      }
+
+      const tipo = document.getElementById('nr-ciu-tipo-entidad').value;
+      const dni = document.getElementById('nr-ciu-dni').value || document.getElementById('nr-ciu-cuil').value;
+      let nombreLimpio = document.getElementById('nr-ciu-nombre').value;
+      if (tipo === '1' && document.getElementById('nr-ciu-apellido').value && document.getElementById('nr-ciu-apellido').value !== '-') {
+          nombreLimpio = document.getElementById('nr-ciu-apellido').value + ', ' + nombreLimpio;
+      }
+      
+      const esOrg = (tipo === '2' || (dni && dni.length > 8));
+      const iconoCiu = esOrg ? 'fa-building' : 'fa-user';
+
+      box.innerHTML = `
+        <div style="padding: 12px 24px; font-weight:800; color:var(--text-muted); font-size:0.75rem; text-transform:uppercase; border-bottom: 1px solid var(--border-soft); background: #f8fafc; letter-spacing: 0.5px;">
+           Haga clic sobre un registro para abrir la ficha técnica
+        </div>
+        <div style="display: flex; flex-direction: column; width: 100%; padding: 15px 24px; gap: 12px; background: #f8fafc;">
+      ` + casos.map(c => {
+         const estadoLimpio = c.estado.toUpperCase().trim();
+         let colorEstado, bgEstado;
+         switch(estadoLimpio) {
+            case 'PENDIENTE': colorEstado = 'var(--warning)'; bgEstado = 'var(--warning-bg)'; break;
+            case 'ASIGNADO': colorEstado = 'var(--primary)'; bgEstado = 'var(--primary-light)'; break;
+            case 'EN PROCESO': colorEstado = 'var(--success)'; bgEstado = 'var(--success-bg)'; break;
+            case 'DERIVADO': colorEstado = 'var(--def-brown)'; bgEstado = '#f3f0f0'; break;
+            case 'FINALIZADO': colorEstado = '#10b981'; bgEstado = '#dcfce7'; break;
+            default: colorEstado = '#64748b'; bgEstado = '#f1f5f9';
+         }
+
+         const expTag = c.expediente 
+          ? `<span class="tc-exp-tag"><i class="fas fa-file-contract"></i> Exp: ${c.expediente}</span>`
+          : `<span class="tc-off-tag"><i class="fas fa-folder-minus"></i> Sin expediente</span>`;
+
+         return `
+           <div class="ticket-moderno" onclick="ATC_App.abrirCasoDesdeHistorial('${c.id}')" style="border-left-color: ${colorEstado};">
+              <div class="tm-header">
+                 <div class="tm-header-left">
+                    <span class="tm-id">#${c.id.substring(0,8).toUpperCase()}</span>
+                    <span class="tm-datetime"><i class="far fa-calendar-alt"></i> ${c.fecha} &nbsp;&bull;&nbsp; <i class="far fa-clock"></i> ${c.hora} hs</span>
+                 </div>
+                 <span class="tm-badge-estado" style="background:${bgEstado}; color:${colorEstado}; border-color:${colorEstado}40;">${estadoLimpio}</span>
+              </div>
+              <div class="tm-body">
+                 <div class="tm-citizen-wrapper">
+                    <div class="tm-citizen-name" title="${nombreLimpio}"><i class="fas ${iconoCiu}" style="color:var(--text-muted); opacity: 0.6;"></i> ${nombreLimpio}</div>
+                 </div>
+                 <div class="tm-category">${c.categoria}</div>
+              </div>
+              <div class="tm-footer">
+                 ${expTag}
+                 <div class="tm-routing-group">
+                    <span class="tm-route-badge" title="Área Destino"><i class="fas fa-map-marker-alt" style="color: var(--def-magenta);"></i> ${c.area}</span>
+                    <span class="tm-route-badge" title="Agente Responsable"><i class="fas fa-user-check" style="color: var(--def-teal);"></i> ${c.agente}</span>
+                 </div>
+              </div>
+           </div>
+         `;
+      }).join('') + `</div>`;
+    },
+
+    abrirCasoDesdeHistorial: function(idCaso) {
+       Portal_Core.mostrarConfirmacion('¿Abrir Ficha Técnica?', `Saldrá del módulo de Nueva Recepción y navegará al Caso #${idCaso.substring(0,8).toUpperCase()}. ¿Desea continuar?`, () => {
+           cargarModulo('DetalleCaso', idCaso);
+       });
+    },
+
+    continuarARecepcion: function(e) {
+      if(e) e.preventDefault();
+      const idCiu = document.getElementById('nr-ciudadano-id').value;
+      const esNuevo = !idCiu;
+      const tipoEntidad = document.getElementById('nr-ciu-tipo-entidad').value;
+      const nombre = document.getElementById('nr-ciu-nombre').value.trim();
+      const apellido = document.getElementById('nr-ciu-apellido').value.trim();
+      const cuil = document.getElementById('nr-ciu-cuil').value.trim();
+      const dniForm = document.getElementById('nr-ciu-dni').value.trim(); 
+      const fechaNac = document.getElementById('nr-ciu-fecha-nac').value;
+      const genero = document.getElementById('nr-ciu-genero').value;
+      const tel = document.getElementById('nr-ciu-tel').value.trim();
+      const esOtraProv = document.getElementById('nr-ciu-otra-prov').checked;
+      const barrio = document.getElementById('nr-ciu-barrio').value;
+
+      if (esNuevo) {
+        if (!tipoEntidad || !nombre || !cuil) return Portal_Core.mostrarToast('error', 'Campos Incompletos', 'Tipo de Entidad, Nombres y CUIL son obligatorios.');
+        
+        if (cuil.length !== 11) return Portal_Core.mostrarToast('warning', 'Validación', 'El CUIL/CUIT debe tener exactamente 11 dígitos numéricos.');
+        if (tel && tel.length < 10) return Portal_Core.mostrarToast('warning', 'Validación', 'El teléfono debe tener al menos 10 dígitos (Cód de área + Número).');
+
+        if (tipoEntidad === '1') {
+          if (!apellido || !dniForm || !fechaNac || !genero) return Portal_Core.mostrarToast('error', 'Campos Incompletos', 'Para Ciudadanos: Apellidos, DNI, Nacimiento y Género son obligatorios.');
+          if (dniForm.length < 7 || dniForm.length > 8) return Portal_Core.mostrarToast('warning', 'Validación', 'El DNI debe tener 7 u 8 dígitos numéricos.');
+          
+          const dniPadded = dniForm.padStart(8, '0');
+          if (cuil.substring(2, 10) !== dniPadded) {
+              return Portal_Core.mostrarToast('error', 'Inconsistencia', 'El DNI ingresado no coincide con la raíz del CUIL.');
+          }
+        }
+
+        if (!esOtraProv && !barrio) return Portal_Core.mostrarToast('error', 'Ubicación Incompleta', 'Debe indicar el Barrio o marcar que reside en otra provincia.');
+      }
+
+      this.estadoNuevaRecepcion.ciudadanoActual = {
+         id: idCiu, tipo_entidad_id: tipoEntidad, dni: (tipoEntidad === '1' && dniForm) ? dniForm : null, 
+         nombre: nombre, apellido: (tipoEntidad === '1' && apellido) ? apellido : '-', cuil: cuil, 
+         fecha_nacimiento: (tipoEntidad === '1' && fechaNac) ? fechaNac : null, genero_id: (tipoEntidad === '1' && genero) ? genero : null, 
+         telefono: tel, email: document.getElementById('nr-ciu-email').value, 
+         otra_provincia: esOtraProv, barrio_id: barrio || null, calle: document.getElementById('nr-ciu-calle').value, 
+         altura: document.getElementById('nr-ciu-altura').value, piso: document.getElementById('nr-ciu-piso').value, dpto: document.getElementById('nr-ciu-dpto').value
+      };
+
+      cargarModulo('NuevaRecepcionPaso2');
+    },
+
+    iniciarNuevaRecepcionPaso2: function() {
+      if (!this.estadoNuevaRecepcion.ciudadanoActual) {
+         Portal_Core.mostrarToast('error', 'Error de Sesión', 'Ciudadano no seleccionado. Volviendo al Paso 1.');
+         cargarModulo('BuscarCiudadano'); return;
+      }
+      
+      const p = this.estadoNuevaRecepcion.ciudadanoActual;
+      document.getElementById('p2-ciudadano-nombre').innerText = p.apellido !== '-' ? `${p.apellido}, ${p.nombre}`.toUpperCase() : p.nombre.toUpperCase();
+      document.getElementById('p2-ciudadano-dni').innerText = p.cuil || p.dni;
+      
+      document.getElementById('alerta-duplicado').style.display = 'none';
+      document.getElementById('form-recepcion-p2').reset();
+      
+      const btnGuardar = document.getElementById('btn-guardar-nr');
+      if (btnGuardar) { btnGuardar.disabled = false; btnGuardar.innerHTML = '<i class="fas fa-save" style="margin-right: 8px;"></i> Generar Recepción'; }
+
+      document.getElementById('nr-container-contacto').classList.add('hidden');
+      document.getElementById('p2-box-tel').classList.add('hidden');
+      document.getElementById('p2-box-email').classList.add('hidden');
+      document.getElementById('p2-box-barrio').classList.add('hidden');
+      document.getElementById('container-fecha-manual').classList.add('hidden');
+      document.getElementById('container-destino').classList.add('hidden');
+      
+      this.estadoNuevaRecepcion.idCasoDuplicadoCache = null;
+      this.setReprogramado(false);
+      
+      const cacheATC = Memoria.leer('diccionariosATC');
+      const cacheGlobal = Memoria.leer('diccionariosGlobales');
+      
+      if (cacheATC) {
+        Portal_Core.poblarSelect('nr-canal', cacheATC.canales);
+        Portal_Core.poblarSelect('nr-categoria', cacheATC.categorias);
+        Portal_Core.poblarSelect('nr-prioridad', cacheATC.prioridades);
+        Portal_Core.poblarSelect('nr-tipo-destino', cacheATC.tipos_destinatario);
+        Portal_Core.poblarSelect('nr-barrio-operativo', cacheATC.barrios);
+      }
+    },
+
+    cambiarCanalPaso2: function() {
+        const canal = document.getElementById('nr-canal');
+        const container = document.getElementById('nr-container-contacto');
+        const boxTel = document.getElementById('p2-box-tel');
+        const boxEmail = document.getElementById('p2-box-email');
+        const boxBarrio = document.getElementById('p2-box-barrio');
+        const inputTel = document.getElementById('nr-telefono');
+        const inputEmail = document.getElementById('nr-email');
+        const inputBarrio = document.getElementById('nr-barrio-operativo');
+
+        container.classList.add('hidden');
+        boxTel.classList.add('hidden');
+        boxEmail.classList.add('hidden');
+        boxBarrio.classList.add('hidden');
+        
+        inputTel.required = false; inputEmail.required = false; inputBarrio.required = false;
+
+        if(canal.selectedIndex === 0 || canal.value === "") return;
+
+        const canalNombre = canal.options[canal.selectedIndex].text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        let mostrar = false;
+
+        if (canalNombre.includes('whatsapp') || canalNombre.includes('telefono') || canalNombre.includes('telefonico')) {
+            boxTel.classList.remove('hidden'); inputTel.required = true; inputTel.disabled = false; 
+            if(!inputTel.value && this.estadoNuevaRecepcion.ciudadanoActual) inputTel.value = this.estadoNuevaRecepcion.ciudadanoActual.telefono || '';
+            mostrar = true;
+        } else if (canalNombre.includes('email') || canalNombre.includes('correo') || canalNombre.includes('mail')) {
+            boxEmail.classList.remove('hidden'); inputEmail.required = true; inputEmail.disabled = false;
+            if(!inputEmail.value && this.estadoNuevaRecepcion.ciudadanoActual) inputEmail.value = this.estadoNuevaRecepcion.ciudadanoActual.email || '';
+            mostrar = true;
+        } else if (canalNombre.includes('operativo') || canalNombre.includes('territorio') || canalNombre.includes('barrio')) {
+            boxBarrio.classList.remove('hidden'); inputBarrio.required = true; inputBarrio.disabled = false;
+            mostrar = true;
+        }
+
+        if (mostrar) container.classList.remove('hidden');
+    },
+
+    setReprogramado: function(valor) {
+      this.estadoNuevaRecepcion.reprogramado = valor;
+      const inputFecha = document.getElementById('nr-fecha-manual');
+      const containerFecha = document.getElementById('container-fecha-manual');
+      if (valor) {
+        document.getElementById('btn-repro-si').classList.add('active');
+        document.getElementById('btn-repro-no').classList.remove('active');
+        containerFecha.classList.remove('hidden');
+        inputFecha.required = true;
+      } else {
+        document.getElementById('btn-repro-no').classList.add('active');
+        document.getElementById('btn-repro-si').classList.remove('active');
+        containerFecha.classList.add('hidden');
+        inputFecha.required = false; inputFecha.value = ''; 
+      }
+    },
+
+    cambiarTipoDestino: function() {
+        const tipo = document.getElementById('nr-tipo-destino').value;
+        const container = document.getElementById('container-destino');
+        const select = document.getElementById('nr-destino-id');
+        const label = document.getElementById('lbl-destino');
+        
+        const cacheATC = Memoria.leer('diccionariosATC');
+        const cacheGlobal = Memoria.leer('diccionariosGlobales');
+        
+        select.innerHTML = '<option value="">Seleccione...</option>';
+        if(!tipo) { container.classList.add('hidden'); return; }
+        
+        container.classList.remove('hidden');
+        select.required = true;
+
+        if (tipo === '1' && cacheGlobal && cacheGlobal.agentes) {
+            label.innerHTML = 'Agente Responsable <span style="color:var(--danger)">*</span>';
+            cacheGlobal.agentes.forEach(a => select.innerHTML += `<option value="${a.id}">${a.apellido}, ${a.nombre}</option>`);
+            if (window.USUARIO_ACTUAL && window.USUARIO_ACTUAL.idAgente) select.value = String(window.USUARIO_ACTUAL.idAgente);
+        } else if (tipo === '2' && cacheGlobal && cacheGlobal.areas) {
+            label.innerHTML = 'Área Destino <span style="color:var(--danger)">*</span>';
+            cacheGlobal.areas.forEach(a => select.innerHTML += `<option value="${a.id}">${a.nombre}</option>`);
+            if (window.USUARIO_ACTUAL && window.USUARIO_ACTUAL.idArea) select.value = String(window.USUARIO_ACTUAL.idArea);
+        } else if (tipo === '3' && cacheATC && cacheATC.organismos) {
+            label.innerHTML = 'Organismo Externo <span style="color:var(--danger)">*</span>';
+            cacheATC.organismos.forEach(a => select.innerHTML += `<option value="${a.id}">${a.nombre}</option>`);
+        }
+    },
+
+    verificarDuplicadoFront: function() {
+      const catSeleccionada = document.getElementById('nr-categoria').value;
+      const alerta = document.getElementById('alerta-duplicado');
+      const txtAlerta = document.getElementById('txt-alerta-duplicado');
+      alerta.style.display = 'none';
+      this.estadoNuevaRecepcion.idCasoDuplicadoCache = null;
+      
+      if (!catSeleccionada || this.estadoNuevaRecepcion.casosCiudadanoActual.length === 0) return;
+      const estadosActivos = ['PENDIENTE', 'ASIGNADO', 'DERIVADO', 'EN PROCESO'];
+      const casoPrevio = this.estadoNuevaRecepcion.casosCiudadanoActual.find(c => String(c.categoria_id) === String(catSeleccionada) && estadosActivos.includes(c.estado.toUpperCase().trim()));
+      
+      if (casoPrevio) {
+        alerta.classList.remove('hidden'); 
+        txtAlerta.innerHTML = `Identificamos que la entidad ya tiene un trámite <b>EN CURSO (${casoPrevio.estado})</b> para esta categoría (Caso <b>#${casoPrevio.id.substring(0,8).toUpperCase()}</b>).`;
+        this.estadoNuevaRecepcion.idCasoDuplicadoCache = casoPrevio.id;
+      }
+    },
+
+    irACasoDuplicado: function() {
+      if (this.estadoNuevaRecepcion.idCasoDuplicadoCache) {
+        Portal_Core.mostrarConfirmacion('¿Abrir Ficha Existente?', 'Saldrá de la creación de la recepción actual. ¿Continuar?', () => { cargarModulo('DetalleCaso', this.estadoNuevaRecepcion.idCasoDuplicadoCache); });
+      }
+    },
+
+    guardarNuevaRecepcion: function(e, forzarDuplicado = false) {
+      if (e) e.preventDefault();
+      
+      const btn = document.getElementById('btn-guardar-nr');
+      const alerta = document.getElementById('alerta-duplicado');
+      const alertaVisible = alerta && !alerta.classList.contains('hidden');
+
+      if (alertaVisible && !forzarDuplicado) {
+          return Portal_Core.mostrarConfirmacion(
+              '¿Crear trámite múltiple?',
+              'La entidad ya posee un trámite activo para esta categoría. ¿Deseas registrar uno nuevo de todas formas?',
+              () => { window.ATC_App.guardarNuevaRecepcion(null, true); }
+          );
+      }
+
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fas fa-circle-notch spinner"></i> Generando...';
+
+      try {
+          const isRepro = this.estadoNuevaRecepcion.reprogramado;
+          const fechaManual = isRepro ? document.getElementById('nr-fecha-manual').value : null;
+          const tipoDestino = document.getElementById('nr-tipo-destino').value;
+          const destinoId = document.getElementById('nr-destino-id').value;
+          const canal = document.getElementById('nr-canal');
+
+          let telefonoIngresado = null; let emailIngresado = null;
+          let observacionesFinales = document.getElementById('nr-observaciones').value.trim();
+
+          if (!document.getElementById('p2-box-tel').classList.contains('hidden')) telefonoIngresado = document.getElementById('nr-telefono').value.trim();
+          if (!document.getElementById('p2-box-email').classList.contains('hidden')) emailIngresado = document.getElementById('nr-email').value.trim();
+          
+          if (!document.getElementById('p2-box-barrio').classList.contains('hidden')) {
+              const selBarrio = document.getElementById('nr-barrio-operativo');
+              if (selBarrio.selectedIndex > 0) {
+                  const txtBarrio = selBarrio.options[selBarrio.selectedIndex].text;
+                  observacionesFinales = `[Atención en Territorio | Barrio: ${txtBarrio}]\n\n` + observacionesFinales;
+              }
+          }
+
+          const paquete = {
+            agente_creador_id: window.USUARIO_ACTUAL.idAgente, area_creadora_id: window.USUARIO_ACTUAL.idArea,
+            ciudadano: this.estadoNuevaRecepcion.ciudadanoActual,
+            recepcion: {
+              canal_id: canal.value, categoria_id: document.getElementById('nr-categoria').value,
+              prioridad_id: document.getElementById('nr-prioridad').value, reprogramado: isRepro,
+              fecha_inicio_manual: fechaManual, tipo_destinatario_id: tipoDestino || null,
+              destino_id: destinoId || null, telefono: telefonoIngresado, email: emailIngresado,
+              observaciones: observacionesFinales, forzar_duplicado: forzarDuplicado 
+            }
+          };
+
+          google.script.run
+            .withSuccessHandler(res => {
+                btn.disabled = false; btn.innerHTML = '<i class="fas fa-save" style="margin-right: 8px;"></i> Generar Recepción';
+                if(res.success) {
+                  Portal_Core.mostrarToast('success', 'Éxito', 'Caso registrado correctamente.');
+                  window.ATC_App.estadoNuevaRecepcion.ciudadanoActual = null; 
+                  // TODO: Si checkNotificaciones se movió al Core, ajustarlo aquí
+                  if (window.Portal_Core && typeof window.Portal_Core.checkNotificaciones === 'function') {
+                      window.Portal_Core.checkNotificaciones();
+                  }
+                  cargarModulo('MisCasos');
+                } else if (res.isDuplicado) {
+                  window.ATC_App.estadoNuevaRecepcion.idCasoDuplicadoCache = res.casoDuplicadoId;
+                  Portal_Core.mostrarConfirmacion('Caso Existente', `Ya existe el Caso #${res.casoDuplicadoId.substring(0,8).toUpperCase()}. ¿Forzar creación?`, () => { window.ATC_App.guardarNuevaRecepcion(null, true); });
+                } else {
+                  Portal_Core.mostrarToast('error', 'Error del Sistema', res.message);
+                }
+            })
+            .withFailureHandler(err => {
+                btn.disabled = false; btn.innerHTML = '<i class="fas fa-save" style="margin-right: 8px;"></i> Generar Recepción';
+                Portal_Core.mostrarToast('error', 'Fallo de Red', err.message);
+            })
+            .registrarRecepcionBackend(paquete);
+
+      } catch(e) {
+          btn.disabled = false; btn.innerHTML = '<i class="fas fa-save" style="margin-right: 8px;"></i> Generar Recepción';
+          Portal_Core.mostrarToast('error', 'Error en el Navegador', e.message);
+      }
+    }
+  });
+</script>

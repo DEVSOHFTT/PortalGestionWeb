@@ -1,0 +1,271 @@
+<script>
+  Object.assign(window.ATC_App, {
+    
+    iniciarFichaCiudadano: function(idCiudadano) {
+      if (this.temporizadores.bandeja) clearInterval(this.temporizadores.bandeja);
+      
+      document.getElementById('ruta-actual').innerText = 'Ficha del Ciudadano';
+      document.getElementById('content-ficha-ciu').classList.add('hidden');
+      document.getElementById('loader-ficha-ciu').classList.remove('hidden');
+      document.getElementById('fc-vista-lectura').classList.remove('hidden');
+      document.getElementById('fc-vista-edicion').classList.add('hidden');
+      document.getElementById('input-filtro-casos-fc').value = '';
+
+      google.script.run
+        .withSuccessHandler(res => {
+          if (!res.success) { Portal_Core.mostrarToast('error', 'Error', res.message); this.cerrarFichaCiudadano(); return; }
+          
+          window.ATC_App.estadoFicha.ciudadano = res.ciudadano;
+          window.ATC_App.estadoFicha.casos = res.historial;
+          
+          this.renderizarFichaCiudadano();
+        })
+        .withFailureHandler(err => {
+          Portal_Core.mostrarToast('error', 'Fallo de Red', err.message); this.cerrarFichaCiudadano();
+        })
+        .obtenerFichaCompletaCiudadanoBackend(idCiudadano);
+    },
+
+    renderizarFichaCiudadano: function() {
+      const c = window.ATC_App.estadoFicha.ciudadano;
+      const casos = window.ATC_App.estadoFicha.casos;
+
+      const esOrg = (c.dni && c.dni.length > 8) || String(c.tipo_entidad_id) === '2';
+      let nombreLimpio = c.nombre;
+      if (c.apellido && c.apellido !== '-') nombreLimpio = `${c.apellido}, ${c.nombre}`;
+      
+      document.getElementById('fc-nombre').innerText = nombreLimpio.toUpperCase();
+      
+      document.getElementById('fc-dni').innerHTML = c.dni ? `<i class="fas fa-id-card"></i> DNI: ${c.dni}` : `<i class="fas fa-id-card"></i> Sin DNI`;
+      document.getElementById('fc-cuil').innerHTML = c.cuil ? `<i class="fas fa-hashtag"></i> CUIT/L: ${c.cuil}` : `<i class="fas fa-hashtag"></i> Sin CUIT/L`;
+      document.getElementById('fc-tel').innerHTML = c.telefono ? `<i class="fas fa-phone-alt"></i> ${c.telefono}` : `<i class="fas fa-phone-alt"></i> Sin Teléfono`;
+
+      const avatar = document.getElementById('fc-avatar');
+      if (esOrg) {
+         avatar.innerHTML = '<i class="fas fa-building"></i>';
+         avatar.style.color = 'var(--def-orange)';
+         avatar.parentElement.style.background = 'var(--warning-bg)';
+      } else {
+         avatar.innerHTML = '<i class="fas fa-user"></i>';
+         avatar.style.color = 'var(--primary)';
+         avatar.parentElement.style.background = 'var(--primary-light)';
+      }
+
+      document.getElementById('fc-email').innerText = c.email || 'Sin registrar';
+      
+      let loc = [];
+      if(c.calle) loc.push(`${c.calle} ${c.altura || ''}`);
+      if(c.piso || c.dpto) loc.push(`Piso ${c.piso || '-'} Dpto ${c.dpto || '-'}`);
+      if(c.barrio_id) {
+         const cache = Memoria.leer('diccionariosATC');
+         if(cache && cache.barrios) {
+            const b = cache.barrios.find(x => String(x.id) === String(c.barrio_id));
+            if(b) loc.push(b.nombre);
+         }
+      }
+      document.getElementById('fc-domicilio').innerText = loc.length > 0 ? loc.join(' - ') : 'Sin registrar';
+      
+      let edadTxt = 'Sin registrar';
+      if(c.fecha_nacimiento) {
+         try {
+            const dn = new Date(c.fecha_nacimiento);
+            const edad = Math.floor((new Date() - dn) / 31557600000);
+            if(edad >= 0) edadTxt = `${edad} años`;
+         } catch(e) {}
+      }
+      document.getElementById('fc-nacimiento').innerText = edadTxt;
+      
+      let txtGen = 'N/D';
+      if(String(c.genero_id)==='1') txtGen = 'Masculino';
+      else if(String(c.genero_id)==='2') txtGen = 'Femenino';
+      else if(String(c.genero_id)==='3') txtGen = 'No Binario';
+      document.getElementById('fc-genero').innerText = txtGen;
+
+      this.renderizarCasosFicha(casos);
+
+      document.getElementById('loader-ficha-ciu').classList.add('hidden');
+      document.getElementById('content-ficha-ciu').classList.remove('hidden');
+    },
+
+    renderizarCasosFicha: function(listaFiltrada) {
+      const badge = document.getElementById('fc-casos-badge');
+      badge.innerText = `${listaFiltrada.length} CASO${listaFiltrada.length !== 1 ? 'S' : ''}`;
+      
+      const boxCasos = document.getElementById('fc-contenedor-casos');
+      if (listaFiltrada.length === 0) {
+          boxCasos.innerHTML = `<div style="text-align:center; padding:50px; color:var(--text-muted);"><i class="fas fa-search-minus fa-3x" style="opacity:0.2; margin-bottom:15px;"></i><p>No se encontraron casos con los filtros aplicados.</p></div>`;
+      } else {
+          boxCasos.innerHTML = listaFiltrada.map(ca => {
+             const est = ca.estado.toUpperCase().trim();
+             let cEst, bgEst;
+             switch(est) {
+                case 'PENDIENTE': cEst = 'var(--warning)'; bgEst = 'var(--warning-bg)'; break;
+                case 'ASIGNADO': cEst = 'var(--primary)'; bgEst = 'var(--primary-light)'; break;
+                case 'EN PROCESO': cEst = 'var(--success)'; bgEst = 'var(--success-bg)'; break;
+                case 'DERIVADO': cEst = 'var(--def-brown)'; bgEst = '#f3f0f0'; break;
+                case 'FINALIZADO': cEst = '#10b981'; bgEst = '#dcfce7'; break;
+                default: cEst = '#64748b'; bgEst = '#f1f5f9';
+             }
+             
+             const tieneExp = ca.expediente && ca.expediente !== "No posee";
+             const expTagClass = tieneExp ? 'tc-exp-tag' : 'tc-off-tag';
+             const expIcon = tieneExp ? 'fa-file-contract' : 'fa-folder-minus';
+             const expTexto = tieneExp ? ca.expediente : 'Sin expediente';
+             const expTagHtml = `<span class="${expTagClass}"><i class="fas ${expIcon}"></i> Exp: ${expTexto}</span>`;
+
+             return `
+               <div class="ticket-moderno" style="border-left-color: ${cEst}; padding: 16px 20px; cursor: pointer;" onclick="ATC_App.abrirCasoDesdeFicha('${ca.id}')">
+                 <div class="tm-header" style="margin-bottom: 12px;">
+                    <div class="tm-header-left">
+                       <span class="tm-id">#${ca.id.substring(0,8).toUpperCase()}</span>
+                       <span class="tm-datetime"><i class="far fa-calendar-alt"></i> ${ca.fecha} &nbsp;&bull;&nbsp; <i class="far fa-clock"></i> ${ca.hora} hs</span>
+                    </div>
+                    <span class="tm-badge-estado" style="background:${bgEst}; color:${cEst}; border-color:${cEst}40;">${est}</span>
+                 </div>
+                 
+                 <div class="tm-body" style="justify-content: flex-start; gap: 15px; margin-bottom: 4px;">
+                    <div class="tm-category">${ca.categoria}</div>
+                    ${expTagHtml}
+                 </div>
+                 
+                 <div class="tm-footer" style="padding-top: 12px; margin-top: 10px;">
+                    <div class="tm-routing-group">
+                       <span class="tm-route-badge"><i class="fas fa-map-marker-alt" style="color: var(--def-magenta);"></i> ${ca.area}</span>
+                       <span class="tm-route-badge"><i class="fas fa-user-check" style="color: var(--def-teal);"></i> ${ca.agente}</span>
+                    </div>
+                 </div>
+               </div>
+             `;
+          }).join('');
+      }
+    },
+
+    abrirCasoDesdeFicha: function(idCaso) {
+        cargarModulo('DetalleCaso', idCaso);
+    },
+
+    filtrarCasosCiudadano: function() {
+        const texto = document.getElementById('input-filtro-casos-fc').value.toLowerCase().trim();
+        const todosLosCasos = window.ATC_App.estadoFicha.casos;
+        
+        if (texto === "") {
+            this.renderizarCasosFicha(todosLosCasos);
+            return;
+        }
+
+        const filtrados = todosLosCasos.filter(ca => {
+            const cad = `${ca.id} ${ca.categoria} ${ca.area} ${ca.agente} ${ca.estado} ${ca.expediente}`.toLowerCase();
+            return cad.includes(texto);
+        });
+
+        this.renderizarCasosFicha(filtrados);
+    },
+
+    extraerDniDeCuilFicha: function() {
+        const cuil = document.getElementById('edit-fc-cuil').value.trim();
+        const inputDni = document.getElementById('edit-fc-dni');
+        if (cuil.length === 11 && !inputDni.value) {
+            inputDni.value = parseInt(cuil.substring(2, 10), 10).toString();
+        }
+    },
+
+    toggleEdicionFicha: function() {
+       const boxLectura = document.getElementById('fc-vista-lectura');
+       const boxEdicion = document.getElementById('fc-vista-edicion');
+       
+       if (boxEdicion.classList.contains('hidden')) {
+          const c = window.ATC_App.estadoFicha.ciudadano;
+          
+          const cacheATC = Memoria.leer('diccionariosATC');
+          if (cacheATC && cacheATC.barrios) Portal_Core.poblarSelect('edit-fc-barrio', cacheATC.barrios);
+
+          document.getElementById('edit-fc-nombre').value = c.nombre || '';
+          document.getElementById('edit-fc-apellido').value = (c.apellido && c.apellido !== '-') ? c.apellido : '';
+          document.getElementById('edit-fc-dni').value = c.dni || '';
+          document.getElementById('edit-fc-cuil').value = c.cuil || '';
+          document.getElementById('edit-fc-tel').value = c.telefono || '';
+          document.getElementById('edit-fc-email').value = c.email || '';
+          document.getElementById('edit-fc-nac').value = c.fecha_nacimiento || '';
+          document.getElementById('edit-fc-genero').value = c.genero_id || '';
+          document.getElementById('edit-fc-calle').value = c.calle || '';
+          document.getElementById('edit-fc-altura').value = c.altura || '';
+          document.getElementById('edit-fc-piso').value = c.piso || '';
+          document.getElementById('edit-fc-dpto').value = c.dpto || '';
+          setTimeout(() => { document.getElementById('edit-fc-barrio').value = c.barrio_id || ''; }, 50);
+
+          boxLectura.classList.add('hidden');
+          boxEdicion.classList.remove('hidden');
+       } else {
+          boxEdicion.classList.add('hidden');
+          boxLectura.classList.remove('hidden');
+       }
+    },
+
+    guardarEdicionFicha: function() {
+       const nombre = document.getElementById('edit-fc-nombre').value.trim();
+       if (!nombre) return Portal_Core.mostrarToast('warning', 'Validación', 'El nombre o razón social es obligatorio.');
+
+       const cuil = document.getElementById('edit-fc-cuil').value.trim();
+       const dni = document.getElementById('edit-fc-dni').value.trim();
+       const tel = document.getElementById('edit-fc-tel').value.trim();
+
+       if (cuil && cuil.length !== 11) return Portal_Core.mostrarToast('warning', 'Validación', 'El CUIL/CUIT debe tener exactamente 11 dígitos numéricos.');
+       if (dni && (dni.length < 7 || dni.length > 8)) return Portal_Core.mostrarToast('warning', 'Validación', 'El DNI debe tener 7 u 8 dígitos numéricos.');
+       if (tel && tel.length < 10) return Portal_Core.mostrarToast('warning', 'Validación', 'El teléfono debe tener al menos 10 dígitos (Cód de área + Número).');
+
+       if (dni && cuil) {
+           const dniPadded = dni.padStart(8, '0');
+           if (cuil.substring(2, 10) !== dniPadded) {
+               return Portal_Core.mostrarToast('error', 'Inconsistencia', 'El DNI ingresado no coincide con la raíz del CUIL.');
+           }
+       }
+
+       const btn = document.getElementById('btn-guardar-edicion-fc');
+       btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner spinner"></i> Guardando...';
+
+       const payload = {
+           id: window.ATC_App.estadoFicha.ciudadano.id,
+           nombre: nombre,
+           apellido: document.getElementById('edit-fc-apellido').value.trim() || '-',
+           dni: dni || null,
+           cuil: cuil || null,
+           telefono: tel || null,
+           email: document.getElementById('edit-fc-email').value.trim() || null,
+           fecha_nacimiento: document.getElementById('edit-fc-nac').value || null,
+           genero_id: parseInt(document.getElementById('edit-fc-genero').value) || null,
+           calle: document.getElementById('edit-fc-calle').value.trim() || null,
+           altura: document.getElementById('edit-fc-altura').value.trim() || null,
+           piso: document.getElementById('edit-fc-piso').value.trim() || null,
+           dpto: document.getElementById('edit-fc-dpto').value.trim() || null,
+           barrio_id: parseInt(document.getElementById('edit-fc-barrio').value) || null
+       };
+
+       google.script.run
+         .withSuccessHandler(res => {
+            btn.disabled = false; btn.innerHTML = '<i class="fas fa-save"></i> Guardar';
+            if (res.success) {
+               Portal_Core.mostrarToast('success', 'Éxito', 'Perfil del ciudadano actualizado.');
+               window.ATC_App.estadoFicha.ciudadano = { ...window.ATC_App.estadoFicha.ciudadano, ...payload };
+               this.toggleEdicionFicha(); 
+               this.renderizarFichaCiudadano(); 
+            } else {
+               Portal_Core.mostrarToast('error', 'Error DB', res.message);
+            }
+         })
+         .withFailureHandler(err => {
+            btn.disabled = false; btn.innerHTML = '<i class="fas fa-save"></i> Guardar';
+            Portal_Core.mostrarToast('error', 'Fallo de Red', err.message);
+         })
+         .actualizarCiudadanoBackend(payload);
+    },
+
+    cerrarFichaCiudadano: function() {
+      if (this.estadoFicha && this.estadoFicha.idCasoOrigen) {
+         cargarModulo('DetalleCaso', this.estadoFicha.idCasoOrigen);
+         this.estadoFicha = { idCasoOrigen: null }; 
+      } else {
+         cargarModulo('BuscarCiudadano');
+      }
+    }
+  });
+</script>

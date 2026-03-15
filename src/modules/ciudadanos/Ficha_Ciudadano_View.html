@@ -1,0 +1,173 @@
+<style>
+  .col-izquierda.sticky-col {
+    position: sticky;
+    top: 0;
+    align-self: start;
+    max-height: calc(100vh - 130px);
+    overflow-y: auto;
+    padding-right: 12px; 
+    padding-bottom: 20px; 
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+    transition: scrollbar-color 0.3s;
+  }
+  
+  .col-izquierda.sticky-col:hover { scrollbar-color: #cbd5e1 transparent; }
+  .col-izquierda.sticky-col::-webkit-scrollbar { width: 6px; }
+  .col-izquierda.sticky-col::-webkit-scrollbar-track { background: transparent; }
+  .col-izquierda.sticky-col::-webkit-scrollbar-thumb { background: transparent; border-radius: 10px; }
+  .col-izquierda.sticky-col:hover::-webkit-scrollbar-thumb { background: #cbd5e1; }
+
+  .profile-box { padding: 30px 20px; display: flex; flex-direction: column; align-items: center; text-align: center; border-bottom: 1px dashed var(--border-soft); gap: 12px; }
+  .profile-avatar { width: 75px; height: 75px; border-radius: 50%; background: var(--bg-app); color: var(--text-muted); display: flex; align-items: center; justify-content: center; font-size: 2.2rem; border: 3px solid white; box-shadow: var(--shadow-md); flex-shrink: 0; }
+  .profile-info { display: flex; flex-direction: column; gap: 8px; align-items: center; width: 100%; }
+  .profile-name { font-size: 1.25rem; font-weight: 800; color: var(--text-main); letter-spacing: -0.01em; line-height: 1.2; }
+  
+  .pill-info { font-family: monospace; font-size: 0.85rem; font-weight: 700; color: var(--text-muted); background: var(--bg-app); padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border-soft); display: inline-flex; align-items: center; gap: 6px; }
+
+  .fc-edit-group { padding: 12px 20px; border-bottom: 1px solid var(--border-soft); text-align: left; }
+  .fc-edit-group label { display: block; font-size: 0.7rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+  .fc-edit-group input, .fc-edit-group select { width: 100%; padding: 8px 12px; border: 1.5px solid var(--border-soft); border-radius: 6px; font-size: 0.85rem; outline: none; transition: 0.2s; background: var(--bg-app); font-weight: 600; color: var(--text-main); }
+  .fc-edit-group input:focus, .fc-edit-group select:focus { border-color: var(--primary); background: white; box-shadow: 0 0 0 3px var(--primary-light); }
+  .fc-edit-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .fc-edit-grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+</style>
+
+<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 25px;">
+  <div style="display:flex; align-items:center; gap: 15px;">
+    <button class="btn btn-icono" onclick="ATC_App.cerrarFichaCiudadano()" title="Volver atrás"><i class="fas fa-arrow-left"></i></button>
+    <h2 style="font-size: 1.6rem; font-weight: 800; color: var(--text-main); margin:0; letter-spacing: -0.02em;">
+      Ficha del Ciudadano
+    </h2>
+  </div>
+</div>
+
+<div id="loader-ficha-ciu" style="text-align:center; padding:100px;">
+  <i class="fas fa-circle-notch spinner fa-3x" style="color:var(--primary)"></i>
+  <p style="margin-top:20px; color:var(--text-muted); font-weight:500;">Cargando perfil 360°...</p>
+</div>
+
+<div id="content-ficha-ciu" class="hidden layout-detalle">
+   
+   <div class="col-izquierda sticky-col" style="display: flex; flex-direction: column; gap: 20px;">
+      
+      <div id="fc-vista-lectura" class="ficha-card" style="padding: 0; overflow: hidden; margin-bottom: 0;">
+        <div class="fc-header-solid" style="padding: 14px 20px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(63, 34, 186, 0.15);">
+           <span style="display: flex; align-items: center; gap: 8px;"><i class="fas fa-address-card"></i> Perfil 360</span>
+           <button class="btn btn-outline" style="padding: 4px 12px; font-size: 0.75rem;" onclick="ATC_App.toggleEdicionFicha()">
+             <i class="fas fa-edit"></i> Editar
+           </button>
+        </div>
+
+        <div class="profile-box" style="background: var(--primary-light);">
+          <div class="profile-avatar" id="fc-avatar" style="color: var(--primary);">
+            <i class="fas fa-user"></i>
+          </div>
+          <div class="profile-info">
+            <div id="fc-nombre" class="profile-name">...</div>
+            <div style="display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin-top: 5px;">
+               <span id="fc-dni" class="pill-info">...</span>
+               <span id="fc-cuil" class="pill-info">...</span>
+               <span id="fc-tel" class="pill-info">...</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="fc-header-solid fc-header-clickable" style="background: white; border-top: 1px solid var(--border-soft); padding: 14px 20px;" onclick="ATC_App.togglePanelDetalle('fc-datos-contacto', 'icon-fc-contacto')">
+          <span style="display: flex; align-items: center; gap: 8px; color: var(--text-muted);"><i class="fas fa-id-card"></i> Datos Filiatorios</span>
+          <i class="fas fa-chevron-up" id="icon-fc-contacto" style="color: var(--text-muted); transition: transform 0.3s ease;"></i>
+        </div>
+
+        <div id="fc-datos-contacto" class="fc-list" style="transition: all 0.3s ease;">
+          <div class="fc-item" style="padding: 14px 20px;"><span class="fc-lbl"><i class="fas fa-envelope"></i> Email</span><span id="fc-email" class="fc-val" style="word-break: break-all;"></span></div>
+          <div class="fc-item" style="padding: 14px 20px;"><span class="fc-lbl"><i class="fas fa-user-clock"></i> Edad</span><span id="fc-nacimiento" class="fc-val"></span></div>
+          <div class="fc-item" style="padding: 14px 20px;"><span class="fc-lbl"><i class="fas fa-venus-mars"></i> Género</span><span id="fc-genero" class="fc-val"></span></div>
+          <div class="fc-item" style="border-bottom: none; align-items: flex-start; padding: 14px 20px;"><span class="fc-lbl" style="margin-top: 2px;"><i class="fas fa-map-marker-alt"></i> Domicilio</span><span id="fc-domicilio" class="fc-val" style="line-height: 1.4; text-align: right;"></span></div>
+        </div>
+      </div>
+
+      <div id="fc-vista-edicion" class="ficha-card hidden" style="padding: 0; overflow: hidden; margin-bottom: 0; border: 2px solid var(--primary);">
+         <div class="fc-header-solid" style="background: var(--primary); color: white; padding: 14px 20px;">
+           <span><i class="fas fa-user-edit"></i> Editando Ciudadano</span>
+         </div>
+         
+         <div style="max-height: 50vh; overflow-y: auto;">
+             <div class="fc-edit-group">
+               <label>Nombres / Razón Social <span style="color:var(--danger)">*</span></label>
+               <input type="text" id="edit-fc-nombre" required>
+             </div>
+             <div class="fc-edit-group">
+               <label>Apellidos</label>
+               <input type="text" id="edit-fc-apellido">
+             </div>
+             <div class="fc-edit-group fc-edit-grid-2">
+               <div>
+                 <label>Documento / DNI</label>
+                 <input type="text" id="edit-fc-dni" maxlength="8" oninput="this.value = this.value.replace(/[^0-9]/g, '')">
+               </div>
+               <div>
+                 <label>CUIL / CUIT</label>
+                 <input type="text" id="edit-fc-cuil" maxlength="11" oninput="this.value = this.value.replace(/[^0-9]/g, ''); ATC_App.extraerDniDeCuilFicha()">
+               </div>
+             </div>
+             <div class="fc-edit-group fc-edit-grid-2">
+               <div>
+                 <label>Teléfono</label>
+                 <input type="text" id="edit-fc-tel" maxlength="15" oninput="this.value = this.value.replace(/[^0-9]/g, '')">
+               </div>
+               <div><label>Género</label>
+                 <select id="edit-fc-genero">
+                   <option value="">N/D</option>
+                   <option value="1">Masculino</option>
+                   <option value="2">Femenino</option>
+                   <option value="3">No Binario</option>
+                 </select>
+               </div>
+             </div>
+             <div class="fc-edit-group">
+               <label>Email</label>
+               <input type="email" id="edit-fc-email">
+             </div>
+             <div class="fc-edit-group">
+               <label>Fecha Nacimiento</label>
+               <input type="date" id="edit-fc-nac">
+             </div>
+             <div class="fc-edit-group fc-edit-grid-2">
+               <div style="grid-column: span 2;"><label>Barrio</label><select id="edit-fc-barrio"><option value="">Seleccione...</option></select></div>
+             </div>
+             <div class="fc-edit-group fc-edit-grid-2">
+               <div><label>Calle</label><input type="text" id="edit-fc-calle"></div>
+               <div><label>Número</label><input type="text" id="edit-fc-altura"></div>
+             </div>
+             <div class="fc-edit-group fc-edit-grid-2" style="border-bottom: none;">
+               <div><label>Piso</label><input type="text" id="edit-fc-piso"></div>
+               <div><label>Dpto</label><input type="text" id="edit-fc-dpto"></div>
+             </div>
+         </div>
+
+         <div style="padding: 15px; background: #f8fafc; border-top: 1px solid var(--border-soft); display: flex; gap: 10px;">
+           <button class="btn btn-outline" style="flex: 1; font-size: 0.8rem;" onclick="ATC_App.toggleEdicionFicha()">Cancelar</button>
+           <button class="btn btn-primary" id="btn-guardar-edicion-fc" style="flex: 1; font-size: 0.8rem;" onclick="ATC_App.guardarEdicionFicha()"><i class="fas fa-save"></i> Guardar</button>
+         </div>
+      </div>
+
+   </div>
+
+   <div class="col-derecha" style="display: flex; flex-direction: column;">
+      <div class="ficha-card" style="margin-bottom: 0; padding: 24px; min-height: 500px; display: flex; flex-direction: column;">
+        
+        <div class="ficha-header" style="justify-content: space-between; align-items: center; border-bottom: 2px solid var(--border-soft); padding-bottom: 15px; margin-bottom: 20px;">
+          <span style="font-size: 1.05rem;"><i class="fas fa-folder-open" style="color: var(--primary); margin-right: 8px;"></i> Historial de Casos</span>
+          <span id="fc-casos-badge" class="badge-estado" style="background: var(--bg-app); color: var(--text-muted); border: 1px solid var(--border-hard);">0 CASOS</span>
+        </div>
+
+        <div style="margin-bottom: 20px; position: relative;">
+           <i class="fas fa-search" style="position: absolute; left: 16px; top: 50%; transform: translateY(-50%); color: var(--text-muted);"></i>
+           <input type="text" id="input-filtro-casos-fc" placeholder="Filtrar por Categoría, Área, Expediente o Estado..." class="form-input" style="padding-left: 45px; border-radius: 30px; box-shadow: var(--shadow-sm);" onkeyup="ATC_App.filtrarCasosCiudadano()">
+        </div>
+        
+        <div id="fc-contenedor-casos" style="flex-grow: 1; display: flex; flex-direction: column; gap: 12px;"></div>
+      </div>
+   </div>
+   
+</div>

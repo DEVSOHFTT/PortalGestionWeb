@@ -1,0 +1,68 @@
+<div class="header-bandeja" style="margin-bottom: 20px;">
+  <div>
+    <h2 id="bandeja-titulo" style="font-size: 1.75rem; font-weight: 800; color: var(--text-main); letter-spacing: -0.02em;">Gestión de Casos</h2>
+    <p style="color: var(--text-muted); font-size: 0.95rem; margin-top: 4px;">Visualización y búsqueda en tiempo real</p>
+  </div>
+  <div class="search-box">
+    <i class="fas fa-search"></i>
+    <input type="text" id="input-buscador" placeholder="Buscar DNI, Nombre o N° Caso..." onkeyup="ATC_App.filtrarBandejaDebounced()">
+  </div>
+</div>
+
+<div class="ficha-card" style="margin-bottom: 25px; padding: 20px; border-top: 4px solid var(--primary);">
+  <div style="font-size: 0.85rem; font-weight: 800; color: var(--text-main); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 18px; display: flex; justify-content: space-between; align-items: center;">
+    <span><i class="fas fa-filter" style="color: var(--primary); margin-right: 6px;"></i> Filtros de Búsqueda</span>
+    <button class="btn btn-outline" style="padding: 6px 12px; font-size: 0.75rem;" onclick="ATC_App.limpiarFiltrosAvanzados()">
+      <i class="fas fa-eraser"></i> Limpiar Filtros
+    </button>
+  </div>
+
+  <div class="filtros-grid">
+    <div class="filtro-box">
+      <span class="filtro-label">Estado del Caso</span>
+      <select id="filtro-estado" class="filtro-input" onchange="ATC_App.filtrarBandejaAvanzada()"></select>
+    </div>
+
+    <div class="filtro-box">
+      <span class="filtro-label">Categoría</span>
+      <select id="filtro-categoria" class="filtro-input" onchange="ATC_App.filtrarBandejaAvanzada()"></select>
+    </div>
+
+    <div class="filtro-box">
+      <span class="filtro-label">Fecha Desde</span>
+      <input type="date" id="filtro-desde" class="filtro-input" onchange="ATC_App.filtrarBandejaAvanzada()">
+    </div>
+
+    <div class="filtro-box">
+      <span class="filtro-label">Fecha Hasta</span>
+      <input type="date" id="filtro-hasta" class="filtro-input" onchange="ATC_App.filtrarBandejaAvanzada()">
+    </div>
+
+    <div id="box-filtro-agente" class="filtro-box hidden">
+      <span class="filtro-label">Agente Asignado</span>
+      <select id="filtro-agente" class="filtro-input" onchange="ATC_App.filtrarBandejaAvanzada()"></select>
+    </div>
+
+    <div id="box-filtro-area" class="filtro-box hidden">
+      <span class="filtro-label">Área Destino</span>
+      <select id="filtro-area" class="filtro-input" onchange="ATC_App.filtrarBandejaAvanzada()"></select>
+    </div>
+  </div>
+</div>
+
+<div id="dashboard-content"></div>
+
+<style>
+  /* CSS GRID para que los filtros tengan espacio para respirar */
+  .filtros-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 15px;
+    align-items: end;
+  }
+  .filtro-box { display: flex; flex-direction: column; gap: 6px; }
+  .filtro-box.hidden { display: none !important; }
+  .filtro-label { font-size: 0.7rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+  .filtro-input { padding: 10px 14px; border: 1px solid var(--border-soft); border-radius: 8px; font-size: 0.85rem; outline: none; background: var(--bg-app); color: var(--text-main); transition: 0.2s; width: 100%; font-family: inherit; font-weight: 500;}
+  .filtro-input:focus { border-color: var(--primary); background: white; box-shadow: 0 0 0 3px var(--primary-light); }
+</style>

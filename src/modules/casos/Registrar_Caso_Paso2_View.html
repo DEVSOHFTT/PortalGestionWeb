@@ -1,0 +1,149 @@
+<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 20px;">
+  <div style="display:flex; align-items:center; gap: 15px;">
+    <h2 style="font-size: 1.6rem; font-weight: 800; color: var(--text-main); margin:0; letter-spacing: -0.02em;">
+      <i class="fas fa-file-signature" style="color:var(--primary); margin-right:10px;"></i> Clasificación del Trámite (Paso 2)
+    </h2>
+  </div>
+  <button class="btn btn-outline" onclick="cargarModulo('BuscarCiudadano')">
+    <i class="fas fa-arrow-left"></i> Volver al Paso 1
+  </button>
+</div>
+
+<div class="ficha-card" style="margin-bottom: 20px; background: #f0fdf4; border-left: 4px solid #16a34a; display: flex; align-items: center; justify-content: space-between; padding: 12px 20px;">
+   <div>
+      <span style="font-size: 0.75rem; font-weight: 800; color: #166534; text-transform: uppercase; letter-spacing: 0.5px;"><i class="fas fa-user-check"></i> Ciudadano Seleccionado</span>
+      <div id="p2-ciudadano-nombre" style="font-size: 1.1rem; font-weight: 800; color: #14532d; margin-top: 2px; letter-spacing: -0.01em;">Cargando...</div>
+   </div>
+   <div style="text-align: right;">
+      <span style="font-size: 0.75rem; font-weight: 800; color: #166534; text-transform: uppercase; letter-spacing: 0.5px;"><i class="far fa-id-card"></i> Documento</span>
+      <div id="p2-ciudadano-dni" style="font-size: 1.1rem; font-weight: 700; color: #14532d; margin-top: 2px; font-family: monospace;">...</div>
+   </div>
+</div>
+
+<form id="form-recepcion-p2" onsubmit="window.ATC_App.guardarNuevaRecepcion(event)">
+  
+  <div id="alerta-duplicado" class="hidden" style="background: #fffbeb; border: 1px solid #fde68a; border-left: 5px solid #f59e0b; border-radius: 8px; padding: 16px 20px; margin-bottom: 25px; align-items: flex-start; gap: 15px; box-shadow: var(--shadow-sm);">
+     <i class="fas fa-exclamation-triangle" style="color: #d97706; font-size: 1.8rem; margin-top: 2px;"></i>
+     <div style="flex-grow: 1;">
+        <h4 style="margin:0 0 6px 0; color: #b45309; font-size: 1.05rem; font-weight: 800;">Atención: Trámite en Curso</h4>
+        <p style="margin:0 0 12px 0; font-size: 0.9rem; color: #92400e; line-height: 1.5; font-weight: 500;" id="txt-alerta-duplicado">El ciudadano ya posee un trámite activo para esta categoría.</p>
+        <button type="button" class="btn" style="background: white; border: 1px solid #fcd34d; color: #b45309; font-size: 0.8rem; padding: 6px 14px; font-weight: 700;" onclick="ATC_App.irACasoDuplicado()">
+          <i class="fas fa-external-link-alt"></i> Ver Caso Existente
+        </button>
+     </div>
+  </div>
+
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start;">
+    
+    <div class="ficha-card" style="margin-bottom: 0; padding: 24px;">
+      <div class="ficha-header" style="margin-bottom: 15px;"><i class="fas fa-tags"></i> Parámetros de la Recepción</div>
+
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:15px; margin-bottom: 15px;">
+        <div>
+          <label class="form-label">Categoría <span style="color:var(--danger)">*</span></label>
+          <select id="nr-categoria" required class="form-input" onchange="ATC_App.verificarDuplicadoFront()">
+            <option value="">Seleccione...</option>
+          </select>
+        </div>
+        <div>
+          <label class="form-label">Canal de Atención <span style="color:var(--danger)">*</span></label>
+          <select id="nr-canal" required class="form-input" onchange="ATC_App.cambiarCanalPaso2()">
+            <option value="">Seleccione...</option>
+          </select>
+        </div>
+      </div>
+
+      <div id="nr-container-contacto" class="hidden" style="margin-bottom: 20px; background: var(--primary-light); padding: 15px; border-radius: 8px; border: 1px dashed var(--primary);">
+        <div style="display: grid; grid-template-columns: 1fr; gap: 15px;">
+            <div id="p2-box-tel" class="hidden">
+              <label class="form-label" style="color: var(--primary);"><i class="fas fa-phone-alt"></i> N° de Teléfono / WhatsApp Contactado <span style="color:var(--danger)">*</span></label>
+              <input type="text" id="nr-telefono" class="form-input" style="background: white; border: 2px solid var(--primary);" placeholder="Ej: 3512345678">
+              <span style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px; display: block;">Ingrese el número de contacto asociado a esta comunicación.</span>
+            </div>
+            <div id="p2-box-email" class="hidden">
+              <label class="form-label" style="color: var(--primary);"><i class="fas fa-envelope"></i> Correo Electrónico Remitente <span style="color:var(--danger)">*</span></label>
+              <input type="email" id="nr-email" class="form-input" style="background: white; border: 2px solid var(--primary);" placeholder="ejemplo@correo.com">
+              <span style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px; display: block;">Ingrese la dirección de correo electrónico desde la cual se contactó el ciudadano.</span>
+            </div>
+            <div id="p2-box-barrio" class="hidden">
+              <label class="form-label" style="color: var(--primary);"><i class="fas fa-map-marker-alt"></i> Barrio del Operativo <span style="color:var(--danger)">*</span></label>
+              <select id="nr-barrio-operativo" class="form-input" style="background: white; border: 2px solid var(--primary);">
+                <option value="">Seleccione el barrio...</option>
+              </select>
+            </div>
+        </div>
+      </div>
+
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:15px; margin-bottom: 25px; align-items: end;">
+        <div>
+          <label class="form-label">Prioridad <span style="color:var(--danger)">*</span></label>
+          <select id="nr-prioridad" required class="form-input" style="font-weight: 600;">
+            <option value="">Seleccione...</option>
+          </select>
+        </div>
+        <div>
+          <label class="form-label" title="Indica si el trámite ingresó en una fecha/hora anterior a la actual.">
+            Carga Diferida (Reprogramado) <span style="color:var(--danger)">*</span>
+          </label>
+          <div class="toggle-group">
+            <button type="button" id="btn-repro-no" class="toggle-btn active" onclick="ATC_App.setReprogramado(false)">NO</button>
+            <button type="button" id="btn-repro-si" class="toggle-btn" onclick="ATC_App.setReprogramado(true)">SI</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="container-fecha-manual" class="hidden" style="background: #fffbeb; border: 1px solid #fde68a; padding: 15px; border-radius: 8px; margin-bottom: 25px;">
+        <label class="form-label" style="color: #b45309;"><i class="fas fa-clock"></i> Fecha y Hora Real de Ingreso <span style="color:var(--danger)">*</span></label>
+        <input type="datetime-local" id="nr-fecha-manual" class="form-input" style="border-color: #fcd34d;">
+        <p style="font-size: 0.7rem; color: #92400e; margin-top: 5px; font-weight: 600;">Seleccione el momento exacto en que el ciudadano realizó el trámite físico u operativo.</p>
+      </div>
+
+      <div class="ficha-header" style="margin-bottom: 15px; border-top: 1px solid var(--border-soft); padding-top: 20px;">
+        <i class="fas fa-share"></i> Destino / Derivación
+      </div>
+
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:15px;">
+        <div>
+          <label class="form-label">Tipo de Destino <span style="color:var(--danger)">*</span></label>
+          <select id="nr-tipo-destino" class="form-input" required onchange="ATC_App.cambiarTipoDestino()">
+            <option value="">Seleccione tipo...</option>
+          </select>
+        </div>
+        <div id="container-destino" class="hidden">
+          <label class="form-label" id="lbl-destino">Áreas / Organismos <span style="color:var(--danger)">*</span></label>
+          <select id="nr-destino-id" class="form-input">
+            <option value="">Seleccione...</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 20px; height: 100%;">
+      <div class="ficha-card" style="flex-grow: 1; margin-bottom: 0; padding: 24px; display: flex; flex-direction: column;">
+        <div class="ficha-header" style="margin-bottom: 15px;"><i class="fas fa-align-left"></i> Observaciones del Caso <span style="color:var(--danger)">*</span></div>
+        <div style="flex-grow: 1; display: flex; flex-direction: column;">
+          <textarea id="nr-observaciones" required class="form-input" style="flex-grow: 1; resize: none; min-height: 150px; font-size: 0.95rem; line-height: 1.5; padding: 15px;" placeholder="Detalle la solicitud o reclamo del ciudadano de forma clara y concisa..."></textarea>
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 15px; align-items: center;">
+        <button type="button" class="btn" style="background: white; border: 1px solid var(--border-soft); color: var(--text-muted); padding: 14px; font-weight: 800; font-size: 1rem;" onclick="cargarModulo('BuscarCiudadano')">
+          Cancelar
+        </button>
+        <button type="submit" id="btn-guardar-nr" class="btn" style="background: var(--primary); color: white; padding: 14px; font-weight: 800; font-size: 1rem; border: none; box-shadow: var(--shadow-md);">
+           <i class="fas fa-save" style="margin-right: 8px;"></i> Generar Recepción
+        </button>
+      </div>
+    </div>
+  </div>
+</form>
+
+<style>
+  .form-label { display:block; font-size:0.7rem; color:var(--text-muted); margin-bottom:6px; font-weight:800; text-transform: uppercase; letter-spacing: 0.5px; }
+  .form-input { width: 100%; padding: 12px 14px; border: 1.5px solid var(--border-soft); border-radius: 8px; outline: none; background: var(--bg-app); font-family: inherit; transition: border-color 0.2s; font-size: 0.9rem; font-weight: 600; color: var(--text-main);}
+  .form-input:focus { border-color: var(--primary); background: white; box-shadow: 0 0 0 4px var(--primary-light); }
+  .toggle-group { display: flex; border-radius: 8px; overflow: hidden; border: 1.5px solid var(--border-soft); height: 44px; }
+  .toggle-btn { flex: 1; text-align: center; cursor: pointer; background: var(--bg-app); font-weight: 800; color: var(--text-muted); transition: 0.2s; border: none; font-size: 0.85rem; border-right: 1.5px solid var(--border-soft); }
+  .toggle-btn:last-child { border-right: none; }
+  .toggle-btn.active { background: var(--primary); color: white; border-color: var(--primary); } 
+</style>

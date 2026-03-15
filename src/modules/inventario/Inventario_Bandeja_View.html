@@ -1,0 +1,234 @@
+<style>
+  .inv-header-actions { margin-bottom: 20px; display: flex; flex-direction: column; gap: 15px; }
+
+  .inv-title-group {
+    background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%);
+    padding: 25px 20px;
+    border-radius: var(--radius-lg);
+    color: white;
+    box-shadow: 0 10px 20px -5px rgba(63, 34, 186, 0.4);
+    position: relative;
+    overflow: hidden;
+  }
+  
+  .inv-title-group::after {
+    content: '\f49e'; 
+    font-family: 'Font Awesome 5 Free';
+    font-weight: 900;
+    position: absolute; right: -10px; bottom: -20px;
+    font-size: 6.5rem; opacity: 0.1; transform: rotate(-15deg);
+  }
+
+  .inv-title { font-size: 1.6rem; font-weight: 800; margin: 0; display: flex; align-items: center; gap: 10px; }
+  .inv-subtitle { font-size: 0.95rem; margin-top: 5px; font-weight: 500; opacity: 0.9; }
+
+  .inv-filtros-card {
+    background: var(--bg-surface);
+    border-radius: var(--radius-lg);
+    padding: 20px;
+    margin-bottom: 25px;
+    box-shadow: var(--shadow-sm);
+    border-left: 4px solid var(--primary);
+  }
+
+  .inv-filtros-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 15px;
+    margin-top: 15px;
+  }
+
+  .inv-filtro-box label { font-size: 0.7rem; font-weight: 800; color: var(--primary); text-transform: uppercase; margin-bottom: 6px; display: block; }
+
+  .ticket-activo {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-soft);
+    border-radius: 16px;
+    padding: 20px;
+    margin-bottom: 16px;
+    cursor: pointer;
+    transition: var(--transition);
+    box-shadow: 0 4px 15px rgba(0,0,0,0.02);
+    position: relative;
+    overflow: hidden;
+  }
+  .ticket-activo::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 5px; background: var(--primary); }
+  .ticket-activo:hover { transform: translateY(-4px); box-shadow: 0 12px 25px rgba(0,0,0,0.06); border-color: var(--border-hard); }
+  
+  .tm-badge-cat { font-size: 0.65rem; background: var(--bg-app); color: var(--text-muted); padding: 5px 10px; border-radius: 8px; font-weight: 800; text-transform: uppercase; }
+  .tm-badge-route { font-size: 0.75rem; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; background: var(--bg-app); padding: 6px 12px; border-radius: 20px; color: var(--text-main); border: 1px solid var(--border-soft); }
+
+  .fab-container {
+    position: fixed;
+    bottom: 25px;
+    right: 25px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 15px;
+    z-index: 100;
+  }
+
+  .fab-btn {
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+    border: none;
+  }
+  .fab-btn:active { transform: scale(0.9); }
+
+  .fab-secondary {
+    width: 48px; height: 48px;
+    background: var(--bg-surface);
+    color: var(--primary);
+    font-size: 1.2rem;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+    border: 2px solid var(--primary);
+  }
+
+  .fab-primary {
+    width: 65px; height: 65px;
+    background: var(--primary);
+    color: white;
+    font-size: 1.6rem;
+    box-shadow: 0 8px 25px rgba(63, 34, 186, 0.4);
+  }
+</style>
+
+<div class="fade-in" style="padding-bottom: 120px;">
+  
+  <div class="inv-header-actions">
+    <div class="inv-title-group" style="width: 100%;">
+      <h2 class="inv-title"><i class="fas fa-boxes"></i> Inventario</h2>
+      <p class="inv-subtitle">Control de activos, insumos y telefonía</p>
+    </div>
+  </div>
+
+  <div class="inv-filtros-card">
+    <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px dashed var(--border-soft); padding-bottom: 15px;">
+      <span style="font-size: 0.9rem; font-weight: 800; color: var(--text-main); text-transform: uppercase;"><i class="fas fa-filter" style="color: var(--primary); margin-right: 6px;"></i> Filtros</span>
+      <button class="btn-icono" style="width: 36px; height: 36px; background: var(--bg-app); border: none;" onclick="INV_App.limpiarFiltrosBandeja()" title="Limpiar Filtros">
+        <i class="fas fa-eraser"></i>
+      </button>
+    </div>
+    
+    <div class="inv-filtros-grid">
+      <div class="inv-filtro-box">
+        <label>Categoría</label>
+        <select id="inv-filtro-categoria" class="form-input" style="border-radius: 8px;" onchange="INV_App.cargarDatosBandeja()"></select>
+      </div>
+      <div class="inv-filtro-box">
+        <label>Edificio</label>
+        <select id="inv-filtro-edificio" class="form-input" style="border-radius: 8px;" onchange="INV_App.cargarDatosBandeja()"></select>
+      </div>
+      <div class="inv-filtro-box">
+        <label>Agente Asignado</label>
+        <select id="inv-filtro-agente" class="form-input" style="border-radius: 8px;" onchange="INV_App.filtrarBandejaDebounced()"></select>
+      </div>
+      <div class="inv-filtro-box">
+        <label>Búsqueda Libre</label>
+        <input type="text" id="inv-filtro-texto" class="form-input" placeholder="Ej: HP, Serie..." style="border-radius: 8px;" onkeyup="INV_App.filtrarBandejaDebounced()">
+      </div>
+    </div>
+  </div>
+
+  <div id="inv-dashboard-content">
+    <div style="text-align: center; padding: 60px 20px;">
+      <i class="fas fa-circle-notch spinner fa-3x" style="color: var(--primary);"></i>
+      <p style="margin-top: 15px; color: var(--text-muted); font-weight: 600;">Sincronizando inventario...</p>
+    </div>
+  </div>
+
+  <div class="fab-container">
+    <button class="fab-btn fab-secondary" onclick="INV_App.abrirModalAlta()" title="Alta Manual">
+      <i class="fas fa-plus"></i>
+    </button>
+    <button class="fab-btn fab-primary" onclick="cargarModulo('InventarioScan')" title="Escanear QR">
+      <i class="fas fa-camera"></i>
+    </button>
+  </div>
+</div>
+
+<div id="modal-inv-alta" class="modal-overlay hidden">
+  <div class="modal-box" style="max-width: 500px;">
+    <div class="modal-header" style="border-bottom: 2px solid var(--primary); padding-bottom: 10px;">
+      <span style="font-weight: 800; color: var(--primary); font-size: 1.1rem;"><i class="fas fa-plus-circle"></i> Nuevo Activo / Insumo</span>
+      <button class="btn-icono" style="border:none;" onclick="Portal_Core.cerrarModal('modal-inv-alta')"><i class="fas fa-times"></i></button>
+    </div>
+    
+    <div style="max-height: 60vh; overflow-y: auto; padding: 10px 0;">
+      <div class="form-group">
+        <label>Categoría <span style="color:var(--danger)">*</span></label>
+        <select id="alta-inv-categoria" class="form-input" onchange="INV_App.toggleCamposAlta()"></select>
+      </div>
+
+      <div style="display: flex; gap: 15px;">
+        <div class="form-group" style="flex: 1;">
+          <label>Marca</label>
+          <select id="alta-inv-marca" class="form-input"></select>
+        </div>
+        <div class="form-group" style="flex: 1;">
+          <label>Modelo</label>
+          <input type="text" id="alta-inv-modelo" class="form-input" placeholder="Ej: EliteBook">
+        </div>
+      </div>
+
+      <div id="box-alta-equipos">
+        <div style="display: flex; gap: 15px;">
+          <div class="form-group" style="flex: 1;">
+            <label>N° Serie / IMEI</label>
+            <input type="text" id="alta-inv-serie" class="form-input" placeholder="Opcional">
+          </div>
+          <div class="form-group" style="flex: 1;">
+            <label>ID Patrimonial</label>
+            <input type="text" id="alta-inv-idpat" class="form-input" placeholder="Ej: MIC.3">
+          </div>
+        </div>
+      </div>
+
+      <div id="box-alta-insumos" class="hidden">
+        <div class="form-group">
+          <label>Cantidad Inicial (Stock) <span style="color:var(--danger)">*</span></label>
+          <input type="number" id="alta-inv-stock" class="form-input" min="1" value="1">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Estado Inicial <span style="color:var(--danger)">*</span></label>
+        <select id="alta-inv-estado" class="form-input"></select>
+      </div>
+
+      <div class="form-group">
+        <label>Edificio de Depósito / Ubicación <span style="color:var(--danger)">*</span></label>
+        <select id="alta-inv-edificio" class="form-input"></select>
+      </div>
+    </div>
+
+    <div style="text-align: right; margin-top: 15px; border-top: 1px solid var(--border-soft); padding-top: 15px;">
+      <button class="btn btn-outline" onclick="Portal_Core.cerrarModal('modal-inv-alta')">Cancelar</button>
+      <button class="btn btn-primary" id="btn-guardar-alta" style="background: var(--primary); border-color: var(--primary);" onclick="INV_App.guardarNuevoActivo()"><i class="fas fa-save"></i> Registrar</button>
+    </div>
+  </div>
+</div>
+
+<div id="modal-ver-qr" class="modal-overlay hidden">
+  <div class="modal-box" style="text-align: center; max-width: 360px;">
+    <div class="modal-header">
+      <span style="font-weight: 800; color: var(--primary);"><i class="fas fa-qrcode" style="margin-right: 6px;"></i> Identificador Único</span>
+      <button class="btn-icono" style="border:none;" onclick="Portal_Core.cerrarModal('modal-ver-qr')"><i class="fas fa-times"></i></button>
+    </div>
+    <h4 id="qr-modal-title" style="margin: 15px 0 5px; color: var(--text-main); font-size: 1.1rem; font-weight: 800;"></h4>
+    <p style="font-size: 0.8rem; color: var(--text-muted); font-family: monospace; margin-bottom: 20px; background: var(--bg-app); padding: 4px; border-radius: 6px; display: inline-block;">
+      ID: <span id="qr-modal-subtitle" style="font-weight: bold;"></span>
+    </p>
+    <div style="background: white; padding: 15px; border-radius: 16px; display: inline-block; border: 2px dashed var(--primary); box-shadow: var(--shadow-sm);">
+      <img id="qr-modal-img" src="" alt="Código QR" style="width: 220px; height: 220px; display: block; margin: 0 auto;">
+    </div>
+    <div style="margin-top: 25px;">
+      <button class="btn btn-primary" style="width: 100%; border-radius: 25px; background: var(--primary); border-color: var(--primary);" onclick="Portal_Core.cerrarModal('modal-ver-qr')">Cerrar Visualizador</button>
+    </div>
+  </div>
+</div>

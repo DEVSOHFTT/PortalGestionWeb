@@ -1,0 +1,304 @@
+<script>
+  Object.assign(window.ATC_App, {
+    timeoutBuscador: null,
+
+    iniciarBandeja: function(modulo) {
+      this.estadoBandeja.modulo = modulo;
+      this.estadoBandeja.pagina = 1;
+      this.estadoBandeja.terminoBusqueda = '';
+      
+      const titulos = { 'MisCasos': 'Mis Casos', 'MiArea': 'Mi Área', 'TodosLosCasos': 'Histórico General' };
+      document.getElementById('bandeja-titulo').innerText = titulos[modulo] || 'Casos';
+      document.getElementById('ruta-actual').innerText = titulos[modulo] || 'Bandeja';
+      
+      const inputBuscador = document.getElementById('input-buscador');
+      if (inputBuscador) {
+         inputBuscador.value = '';
+         inputBuscador.placeholder = 'Buscar DNI, Nombre, N° Caso o N° Expediente...';
+      }
+      
+      // --- LÓGICA CORE: LAZY LOADING DE DICCIONARIOS ---
+      const cacheATC = Memoria.leer('diccionariosATC');
+      const cacheGlobal = Memoria.leer('diccionariosGlobales'); // Agentes y Áreas
+
+      if (cacheATC && cacheGlobal) {
+         this.configurarFiltrosAvanzados(modulo, cacheATC, cacheGlobal);
+         this.cargarDatosBandeja();
+      } else {
+         document.getElementById('dashboard-content').innerHTML = `
+           <div style="text-align: center; padding: 60px 20px;">
+             <i class="fas fa-circle-notch spinner fa-3x" style="color: var(--primary);"></i>
+             <p style="margin-top: 15px; color: var(--text-muted); font-weight: 600;">Preparando entorno de atención ciudadana...</p>
+           </div>`;
+
+         google.script.run
+           .withSuccessHandler(res => {
+               if(res && res.success) {
+                   Memoria.guardar('diccionariosATC', res.data);
+                   this.configurarFiltrosAvanzados(modulo, res.data, cacheGlobal);
+                   this.cargarDatosBandeja();
+               } else {
+                   Portal_Core.mostrarToast('error', 'Fallo de Sincronización', res.message);
+               }
+           })
+           .withFailureHandler(err => Portal_Core.mostrarToast('error', 'Fallo de Red', err.message))
+           .obtenerDiccionariosATCBackend();
+      }
+    },
+
+    configurarFiltrosAvanzados: function(modulo, cacheATC, cacheGlobal) {
+      document.getElementById('filtro-estado').value = '';
+      document.getElementById('filtro-categoria').value = '';
+      document.getElementById('filtro-desde').value = '';
+      document.getElementById('filtro-hasta').value = '';
+      document.getElementById('filtro-agente').value = '';
+      document.getElementById('filtro-area').value = '';
+
+      if (cacheATC && cacheATC.categorias) {
+         document.getElementById('filtro-categoria').innerHTML = '<option value="">Todas las Categorías</option>' + 
+            cacheATC.categorias.map(c => `<option value="${c.nombre}">${c.nombre}</option>`).join('');
+      }
+      
+      if (cacheGlobal) {
+         if (cacheGlobal.agentes) {
+             document.getElementById('filtro-agente').innerHTML = '<option value="">Todos los Agentes</option>' + 
+                cacheGlobal.agentes.map(a => `<option value="${a.id}">${a.apellido}, ${a.nombre}</option>`).join('');
+         }
+         if (cacheGlobal.areas) {
+             document.getElementById('filtro-area').innerHTML = '<option value="">Todas las Áreas</option>' + 
+                cacheGlobal.areas.map(a => `<option value="${a.id}">${a.nombre}</option>`).join('');
+         }
+      }
+
+      const selEstado = document.getElementById('filtro-estado');
+      const estados = modulo === 'MisCasos' 
+           ? ['ASIGNADO', 'EN PROCESO', 'FINALIZADO']
+           : ['PENDIENTE', 'ASIGNADO', 'EN PROCESO', 'DERIVADO', 'FINALIZADO'];
+      
+      selEstado.innerHTML = '<option value="">Todos los Estados</option>' + 
+           estados.map(e => `<option value="${e}">${e}</option>`).join('');
+
+      const boxAgente = document.getElementById('box-filtro-agente');
+      const boxArea = document.getElementById('box-filtro-area');
+      
+      if (modulo === 'MisCasos') {
+          boxAgente.classList.add('hidden');
+          boxArea.classList.add('hidden');
+      } else if (modulo === 'MiArea') {
+          boxAgente.classList.remove('hidden');
+          boxArea.classList.add('hidden');
+      } else if (modulo === 'TodosLosCasos') {
+          boxAgente.classList.remove('hidden');
+          boxArea.classList.remove('hidden');
+      }
+    },
+
+    limpiarFiltrosAvanzados: function() {
+      document.getElementById('filtro-estado').value = '';
+      document.getElementById('filtro-categoria').value = '';
+      document.getElementById('filtro-desde').value = '';
+      document.getElementById('filtro-hasta').value = '';
+      document.getElementById('filtro-agente').value = '';
+      document.getElementById('filtro-area').value = '';
+      this.filtrarBandejaAvanzada();
+    },
+
+    filtrarBandejaAvanzada: function() {
+      this.estadoBandeja.pagina = 1; 
+      this.cargarDatosBandeja();
+    },
+
+    filtrarBandejaDebounced: function() {
+      clearTimeout(this.timeoutBuscador);
+      this.timeoutBuscador = setTimeout(() => {
+        this.estadoBandeja.terminoBusqueda = document.getElementById('input-buscador').value.trim();
+        this.estadoBandeja.pagina = 1; 
+        this.cargarDatosBandeja();
+      }, 500);
+    },
+
+    obtenerPaqueteFiltros: function() {
+      const mod = this.estadoBandeja.modulo;
+      return {
+        estado: document.getElementById('filtro-estado') ? document.getElementById('filtro-estado').value : '',
+        categoria: document.getElementById('filtro-categoria') ? document.getElementById('filtro-categoria').value : '',
+        fechaDesde: document.getElementById('filtro-desde') ? document.getElementById('filtro-desde').value : '',
+        fechaHasta: document.getElementById('filtro-hasta') ? document.getElementById('filtro-hasta').value : '',
+        agenteId: (mod === 'MiArea' || mod === 'TodosLosCasos') ? document.getElementById('filtro-agente').value : '',
+        areaId: (mod === 'TodosLosCasos') ? document.getElementById('filtro-area').value : ''
+      };
+    },
+
+    cargarDatosBandeja: function() {
+      const filtroContexto = this.estadoBandeja.modulo === 'MisCasos' ? 'MIO' : (this.estadoBandeja.modulo === 'MiArea' ? 'AREA' : 'TODOS');
+      const filtrosAv = this.obtenerPaqueteFiltros();
+      
+      document.getElementById('dashboard-content').innerHTML = `<div style="text-align:center; padding:50px;"><i class="fas fa-circle-notch spinner fa-2x" style="color:var(--primary)"></i><p style="margin-top:10px; color:var(--text-muted); font-weight: 500;">Aplicando filtros y buscando...</p></div>`;
+      
+      google.script.run
+        .withSuccessHandler(res => {
+          if (!res.success) return document.getElementById('dashboard-content').innerHTML = `<div style="color:var(--danger); padding:20px; background:var(--danger-bg); border-radius:8px;"><b>Error SQL:</b> ${res.error}</div>`;
+          window.ATC_App.estadoBandeja.datos = res.casos;
+          window.ATC_App.estadoBandeja.totalRegistros = res.totalRegistros;
+          window.ATC_App.estadoBandeja.itemsPorPagina = res.itemsPorPagina;
+          window.ATC_App.renderizarBandeja(res.casos);
+        })
+        .withFailureHandler(err => { document.getElementById('dashboard-content').innerHTML = `<div style="color:var(--danger); padding:20px; background:var(--danger-bg);"><b>Fallo crítico:</b> ${err.message}</div>`; })
+        .obtenerCasosPaginados(filtroContexto, window.USUARIO_ACTUAL.idAgente, window.USUARIO_ACTUAL.idArea, this.estadoBandeja.pagina, this.estadoBandeja.terminoBusqueda, filtrosAv);
+    },
+
+    cargarDatosSilencioso: function() {
+      const filtroContexto = window.ATC_App.estadoBandeja.modulo === 'MisCasos' ? 'MIO' : (window.ATC_App.estadoBandeja.modulo === 'MiArea' ? 'AREA' : 'TODOS');
+      const filtrosAv = window.ATC_App.obtenerPaqueteFiltros();
+      
+      google.script.run
+        .withSuccessHandler(res => {
+          if (res.success && window.ATC_App.estadoBandeja.terminoBusqueda === '' && window.ATC_App.estadoBandeja.pagina === 1) {
+            window.ATC_App.estadoBandeja.datos = res.casos;
+            window.ATC_App.estadoBandeja.totalRegistros = res.totalRegistros;
+            window.ATC_App.renderizarBandeja(res.casos);
+          }
+        })
+        .obtenerCasosPaginados(filtroContexto, window.USUARIO_ACTUAL.idAgente, window.USUARIO_ACTUAL.idArea, 1, '', filtrosAv);
+    },
+
+    renderizarBandeja: function(lista) {
+      const box = document.getElementById('dashboard-content');
+      if (!box) return;
+      if (!lista || lista.length === 0) {
+        box.innerHTML = `<div style="text-align:center; padding:60px; color:var(--text-muted); background: white; border-radius: 12px; border: 1px solid var(--border-soft);"><i class="fas fa-filter fa-3x" style="opacity:0.2; margin-bottom:15px;"></i><p style="font-weight: 600;">No se encontraron casos con los filtros aplicados.</p></div>`;
+        return;
+      }
+
+      const termino = this.estadoBandeja.terminoBusqueda;
+      const resaltar = (texto) => {
+        if (!termino || !texto) return texto || '';
+        return String(texto).replace(new RegExp(`(${termino})`, 'gi'), `<mark style="background-color:#fef08a; color:#854d0e; padding:0 2px; border-radius:2px;">$1</mark>`);
+      };
+
+      box.innerHTML = lista.map(c => {
+        const estadoLimpio = c.estado.toUpperCase().trim();
+        let colorEstado, bgEstado;
+        
+        switch(estadoLimpio) {
+            case 'PENDIENTE': colorEstado = 'var(--warning)'; bgEstado = 'var(--warning-bg)'; break;
+            case 'ASIGNADO': colorEstado = 'var(--primary)'; bgEstado = 'var(--primary-light)'; break;
+            case 'EN PROCESO': colorEstado = 'var(--success)'; bgEstado = 'var(--success-bg)'; break;
+            case 'DERIVADO': colorEstado = 'var(--def-brown)'; bgEstado = '#f3f0f0'; break;
+            case 'FINALIZADO': colorEstado = '#10b981'; bgEstado = '#dcfce7'; break;
+            default: colorEstado = '#64748b'; bgEstado = '#f1f5f9';
+        }
+
+        let nombreLimpio = c.ciudadano;
+        if(nombreLimpio.startsWith(', ') || nombreLimpio.startsWith('-, ')) {
+           nombreLimpio = nombreLimpio.replace(/^[\s,\-]+/g, '');
+        }
+
+        const esOrg = (c.dni && c.dni.length > 8);
+        const iconoCiu = esOrg ? 'fa-building' : 'fa-user';
+        const colorIconoCiu = esOrg ? 'var(--def-orange)' : 'var(--primary)';
+        
+        const fechaParts = c.fecha.split(' ');
+        const fecha = fechaParts[0];
+        const hora = fechaParts[1] ? fechaParts[1] + ' hs' : '';
+
+        const expTag = c.expediente 
+          ? `<span class="tc-exp-tag"><i class="fas fa-file-contract"></i> Exp: ${resaltar(c.expediente)}</span>`
+          : `<span class="tc-off-tag"><i class="fas fa-folder-minus"></i> Sin expediente</span>`;
+
+        return `
+        <div class="ticket-moderno" onclick="cargarModulo('DetalleCaso', '${c.id}')" style="border-left-color: ${colorEstado};">
+          
+          <div class="tm-header">
+             <div class="tm-header-left">
+                <span class="tm-id">#${resaltar(c.id.substring(0,8).toUpperCase())}</span>
+                <span class="tm-datetime"><i class="far fa-calendar-alt"></i> ${fecha} &nbsp;&bull;&nbsp; <i class="far fa-clock"></i> ${hora}</span>
+             </div>
+             <span class="tm-badge-estado" style="background:${bgEstado}; color:${colorEstado}; border-color:${colorEstado}40;">${estadoLimpio}</span>
+          </div>
+
+          <div class="tm-body">
+             <div class="tm-citizen-wrapper">
+                <div class="tm-citizen-name" title="${nombreLimpio}">
+                   <i class="fas ${iconoCiu}" style="color: ${colorIconoCiu};"></i> 
+                   ${resaltar(nombreLimpio)}
+                </div>
+                <div class="tm-citizen-doc" title="Documento / CUIT">
+                   <i class="fas fa-id-card"></i> ${resaltar(c.dni)}
+                </div>
+             </div>
+             <div class="tm-category">
+                ${c.categoria}
+             </div>
+          </div>
+
+          <div class="tm-footer">
+             ${expTag}
+             <div class="tm-routing-group">
+                <span class="tm-route-badge" title="Área Asignada"><i class="fas fa-map-marker-alt" style="color: var(--def-magenta);"></i> ${c.area}</span>
+                <span class="tm-route-badge" title="Agente Responsable"><i class="fas fa-user-check" style="color: var(--def-teal);"></i> ${c.agente}</span>
+             </div>
+          </div>
+          
+        </div>
+      `}).join('');
+
+      const totalPaginas = Math.ceil(window.ATC_App.estadoBandeja.totalRegistros / window.ATC_App.estadoBandeja.itemsPorPagina);
+      if (totalPaginas > 1) {
+        box.innerHTML += `
+        <div style="display:flex; justify-content:center; align-items:center; gap:20px; margin-top:35px; padding-bottom:30px;">
+          <button class="btn btn-outline" onclick="ATC_App.cambiarPaginaBandeja(-1)" ${window.ATC_App.estadoBandeja.pagina === 1 ? 'disabled' : ''}><i class="fas fa-chevron-left"></i> Anterior</button>
+          <span style="font-size:0.9rem; font-weight:600; color:var(--text-muted);">Página <span style="color:var(--text-main); font-weight:700;">${window.ATC_App.estadoBandeja.pagina}</span> de ${totalPaginas}</span>
+          <button class="btn btn-outline" onclick="ATC_App.cambiarPaginaBandeja(1)" ${window.ATC_App.estadoBandeja.pagina >= totalPaginas ? 'disabled' : ''}>Siguiente <i class="fas fa-chevron-right"></i></button>
+        </div>`;
+      }
+    },
+    cambiarPaginaBandeja: function(delta) { window.ATC_App.estadoBandeja.pagina += delta; this.cargarDatosBandeja(); }
+  });
+</script>
+
+<style>
+  .ticket-moderno {
+    background: #ffffff;
+    border: 1px solid var(--border-soft);
+    border-left: 5px solid var(--border-soft); 
+    border-radius: 12px;
+    padding: 16px 24px;
+    margin-bottom: 16px;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 2px 6px rgba(0,0,0,0.03);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  
+  .ticket-moderno:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 20px rgba(0,0,0,0.06);
+    border-top-color: var(--border-hard);
+    border-right-color: var(--border-hard);
+    border-bottom-color: var(--border-hard);
+  }
+
+  .tm-header { display: flex; justify-content: space-between; align-items: center; }
+  .tm-header-left { display: flex; align-items: center; gap: 15px; }
+  .tm-id { font-family: monospace; font-size: 0.8rem; font-weight: 700; color: var(--text-main); background: var(--bg-app); padding: 3px 8px; border-radius: 6px; border: 1px solid var(--border-soft); }
+  .tm-datetime { font-size: 0.8rem; color: var(--text-muted); font-weight: 600; display: flex; align-items: center; gap: 5px; }
+  .tm-badge-estado { padding: 4px 12px; border-radius: 20px; font-size: 0.7rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; border: 1px solid transparent; }
+
+  .tm-body { display: flex; justify-content: space-between; align-items: center; gap: 20px; }
+  .tm-citizen-wrapper { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .tm-citizen-name { font-size: 1.2rem; font-weight: 800; color: var(--text-main); letter-spacing: -0.01em; display: flex; align-items: center; gap: 10px; }
+  .tm-citizen-name i { font-size: 1.1rem; }
+  .tm-citizen-doc { font-size: 0.8rem; font-weight: 700; color: var(--text-muted); background: var(--bg-app); padding: 3px 10px; border-radius: 12px; display: flex; align-items: center; gap: 5px; }
+  
+  .tm-category { font-size: 0.75rem; font-weight: 800; color: var(--primary); background: var(--primary-light); padding: 6px 14px; border-radius: 8px; text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap; border: 1px solid rgba(63, 34, 186, 0.15); }
+
+  .tm-footer { display: flex; justify-content: space-between; align-items: center; border-top: 1px dashed var(--border-soft); padding-top: 12px; margin-top: 4px; flex-wrap: wrap; gap: 15px;}
+  .tm-routing-group { display: flex; gap: 12px; align-items: center; }
+  .tm-route-badge { font-size: 0.8rem; font-weight: 600; color: var(--text-main); display: flex; align-items: center; gap: 6px; background: var(--bg-app); padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border-soft); }
+  
+  .tc-exp-tag { display: inline-flex; align-items: center; gap: 6px; font-size: 0.75rem; font-weight: 700; background: #fffbeb; color: #92400e; padding: 4px 10px; border-radius: 6px; border: 1px solid #fde68a; }
+  .tc-off-tag { display: inline-flex; align-items: center; gap: 6px; font-size: 0.75rem; font-weight: 600; color: #94a3b8; border: 1px dashed var(--border-hard); padding: 4px 10px; border-radius: 6px; background: #f8fafc; }
+</style>
