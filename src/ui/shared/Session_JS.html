@@ -1,0 +1,131 @@
+<script>
+  /**
+   * ========================================================================
+   * Session_JS.html
+   * PROYECTO: Portal de Gestión - Defensoría del Pueblo
+   * RESPONSABILIDAD: Ciclo de vida completo de la sesión del usuario.
+   *   - Verificar si hay sesión activa en localStorage.
+   *   - Arrancar el entorno global (boot) tras login exitoso.
+   *   - Cerrar sesión limpiando estado y redirigiendo al login.
+   *   - Depende de: AppState_JS (Memoria, USUARIO_ACTUAL),
+   *                 Core_JS (mostrarToast),
+   *                 Notifications_JS (iniciarNotificaciones),
+   *                 Router_JS (cargarModulo).
+   * ========================================================================
+   */
+
+  // =========================================================
+  // VERIFICAR SESIÓN
+  // Punto de entrada al cargar la app (llamado desde Main_JS).
+  // =========================================================
+  function verificarSesion() {
+    const preloader = document.getElementById('preloader-global');
+    if (preloader) preloader.style.display = 'none';
+
+    const sesion = Memoria.leer('sesionDefensoria');
+
+    if (sesion && sesion.idAgente) {
+      window.USUARIO_ACTUAL = sesion;
+
+      document.body.classList.remove('modo-login');
+
+      const topbar = document.getElementById('topbar');
+      const nombreEl = document.getElementById('nombre-usuario-topbar');
+      if (topbar)   topbar.classList.remove('hidden');
+      if (nombreEl) nombreEl.innerText = window.USUARIO_ACTUAL.nombre;
+
+      arrancarEntornoGlobal(sesion);
+    } else {
+      _mostrarPantallaLogin();
+    }
+  }
+
+  // =========================================================
+  // ARRANCAR ENTORNO GLOBAL (boot tras login exitoso)
+  // Carga diccionarios globales y notificaciones desde el backend.
+  // =========================================================
+  function arrancarEntornoGlobal(usuario) {
+    document.querySelectorAll('.view-container').forEach(v => v.classList.add('hidden'));
+
+    const contenedor = document.getElementById('contenedor-principal');
+    const spinner    = document.createElement('div');
+    spinner.id       = 'spinner-arranque';
+    spinner.innerHTML = `
+      <div style="display:flex; flex-direction:column; justify-content:center;
+                  align-items:center; height:60vh; width:100%;">
+        <i class="fas fa-circle-notch spinner fa-2x"
+           style="color:var(--primary); margin-bottom:15px;"></i>
+        <span style="color:var(--text-muted); font-weight:500;">
+          Iniciando sistema central...
+        </span>
+      </div>`;
+    if (contenedor) contenedor.appendChild(spinner);
+
+    google.script.run
+      .withSuccessHandler(res => {
+        const spinnerEl = document.getElementById('spinner-arranque');
+        if (spinnerEl) spinnerEl.remove();
+
+        if (res.success) {
+          Memoria.guardar('diccionariosGlobales', res.data.diccionariosGlobales);
+
+          Portal_Core.iniciarNotificaciones(
+            res.data.notificaciones,
+            res.data.totalNotificaciones
+          );
+
+          cargarModulo('PortalHome');
+        } else {
+          Portal_Core.mostrarToast(
+            'error',
+            'Error de Arranque',
+            'No se pudo iniciar el sistema: ' + res.message
+          );
+        }
+      })
+      .withFailureHandler(err => {
+        const spinnerEl = document.getElementById('spinner-arranque');
+        if (spinnerEl) spinnerEl.innerHTML = `
+          <div style="color:var(--danger); padding:20px; text-align:center;">
+            <b>Fallo de conexión:</b> ${err.message}
+          </div>`;
+      })
+      .bootSystemBackend(usuario.idAgente, usuario.idArea);
+  }
+
+  // =========================================================
+  // CERRAR SESIÓN
+  // =========================================================
+  function cerrarSesion() {
+    Memoria.borrar('sesionDefensoria');
+    window.USUARIO_ACTUAL = null;
+
+    if (Portal_Core.temporizadorNotificaciones) {
+      clearInterval(Portal_Core.temporizadorNotificaciones);
+      Portal_Core.temporizadorNotificaciones = null;
+    }
+
+    const dashboardContent = document.getElementById('dashboard-content');
+    if (dashboardContent) dashboardContent.innerHTML = '';
+
+    const formLogin = document.getElementById('form-login');
+    if (formLogin) formLogin.reset();
+
+    verificarSesion();
+  }
+
+  // =========================================================
+  // PRIVADO: mostrar pantalla de login
+  // =========================================================
+  function _mostrarPantallaLogin() {
+    document.body.classList.add('modo-login');
+
+    const sidebar = document.getElementById('sidebar');
+    const topbar  = document.getElementById('topbar');
+    if (sidebar) sidebar.classList.add('hidden');
+    if (topbar)  topbar.classList.add('hidden');
+
+    cargarModulo('Login');
+  }
+
+</script>

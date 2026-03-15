@@ -1,0 +1,174 @@
+<script>
+  /**
+   * ========================================================================
+   * ATC_Expedientes_JS.html
+   * PROYECTO: Portal de Gestión - Defensoría del Pueblo
+   * RESPONSABILIDAD: Modal de gestión de expedientes vinculados al caso.
+   *   - Abrir modal con código actual pre-cargado.
+   *   - Búsqueda de expediente por código con debounce.
+   *   - Vincular expediente al caso.
+   *   - Desvincular expediente del caso.
+   *   - Depende de: AppState_JS (ATC_App.estadoDetalle, USUARIO_ACTUAL),
+   *                 Core_JS (mostrarToast, cerrarModal, mostrarConfirmacion),
+   *                 ATC_Detalle_JS (iniciarDetalle).
+   * ========================================================================
+   */
+
+  Object.assign(window.ATC_App, {
+
+    // =========================================================
+    // ESTADO INTERNO
+    // =========================================================
+    _timeoutBusquedaExp: null,
+
+    // =========================================================
+    // ABRIR MODAL
+    // =========================================================
+    abrirModalExpediente: function(codigoActual = null) {
+      document.getElementById('modal-exp-codigo').value = codigoActual || '';
+      document.getElementById('modal-exp-resultados').classList.add('hidden');
+
+      const btn = document.getElementById('btn-guardar-exp');
+      btn.disabled  = false;
+      btn.innerHTML = '<i class="fas fa-link"></i> Vincular';
+
+      document.getElementById('modal-expediente').classList.remove('hidden');
+
+      // Foco automático con pequeño delay para animación del modal
+      setTimeout(() => document.getElementById('modal-exp-codigo').focus(), 100);
+    },
+
+    // =========================================================
+    // BÚSQUEDA DE EXPEDIENTE CON DEBOUNCE
+    // =========================================================
+    buscarExpedienteDebounced: function() {
+      clearTimeout(this._timeoutBusquedaExp);
+      this._timeoutBusquedaExp = setTimeout(() => this._buscarExpediente(), 500);
+    },
+
+    _buscarExpediente: function() {
+      const codigo = document.getElementById('modal-exp-codigo').value.trim().toUpperCase();
+      const boxRes = document.getElementById('modal-exp-resultados');
+
+      if (!codigo || codigo.length < 3) {
+        boxRes.classList.add('hidden');
+        return;
+      }
+
+      boxRes.classList.remove('hidden');
+      boxRes.innerHTML = `
+        <div style="padding:12px; text-align:center; color:var(--text-muted);">
+          <i class="fas fa-circle-notch spinner"></i> Buscando...
+        </div>`;
+
+      google.script.run
+        .withSuccessHandler(res => {
+          if (!res.success || !res.expedientes || res.expedientes.length === 0) {
+            boxRes.innerHTML = `
+              <div style="padding:12px; color:var(--danger); font-size:0.85rem;">
+                <i class="fas fa-times-circle"></i>
+                No se encontró ningún expediente con ese código.
+              </div>`;
+            return;
+          }
+
+          boxRes.innerHTML = res.expedientes.map(exp => `
+            <div onclick="document.getElementById('modal-exp-codigo').value='${exp.codigo}'"
+                 style="padding:10px 14px; cursor:pointer; border-radius:8px;
+                        transition:0.2s; font-size:0.85rem;"
+                 onmouseover="this.style.background='var(--bg-app)'"
+                 onmouseout="this.style.background='white'">
+              <span style="font-weight:700; color:var(--primary); font-family:monospace;">
+                ${exp.codigo}
+              </span>
+              <span style="color:var(--text-muted); margin-left:8px;">
+                ${exp.descripcion || 'Sin descripción'}
+              </span>
+            </div>`).join('');
+        })
+        .withFailureHandler(err => {
+          boxRes.innerHTML = `
+            <div style="padding:12px; color:var(--danger); font-size:0.85rem;">
+              <i class="fas fa-exclamation-triangle"></i> Error: ${err.message}
+            </div>`;
+        })
+        .buscarExpedienteBackend(codigo);
+    },
+
+    // =========================================================
+    // VINCULAR EXPEDIENTE
+    // =========================================================
+    vincularExpediente: function() {
+      const codigo = document.getElementById('modal-exp-codigo').value.trim().toUpperCase();
+      if (!codigo) {
+        return Portal_Core.mostrarToast('warning', 'Dato Requerido', 'Ingrese el código del expediente.');
+      }
+
+      const btn = document.getElementById('btn-guardar-exp');
+      btn.disabled  = true;
+      btn.innerHTML = '<i class="fas fa-circle-notch spinner"></i> Vinculando...';
+
+      google.script.run
+        .withSuccessHandler(res => {
+          if (res.success) {
+            Portal_Core.mostrarToast('success', 'Éxito', 'Expediente vinculado correctamente al caso.');
+            Portal_Core.cerrarModal('modal-expediente');
+            this.iniciarDetalle(this.estadoDetalle.idCaso);
+          } else {
+            Portal_Core.mostrarToast('error', 'Error', res.message);
+            btn.disabled  = false;
+            btn.innerHTML = '<i class="fas fa-link"></i> Vincular';
+          }
+        })
+        .withFailureHandler(err => {
+          Portal_Core.mostrarToast('error', 'Fallo de Red', err.message);
+          btn.disabled  = false;
+          btn.innerHTML = '<i class="fas fa-link"></i> Vincular';
+        })
+        .gestionarAsociacionExpedienteBackend(
+          this.estadoDetalle.idCaso,
+          codigo,
+          window.USUARIO_ACTUAL.idAgente,
+          'vincular'
+        );
+    },
+
+    // =========================================================
+    // DESVINCULAR EXPEDIENTE
+    // =========================================================
+    desvincularExpediente: function() {
+      Portal_Core.mostrarConfirmacion(
+        '¿Desvincular Expediente?',
+        'El caso perderá su conexión con el expediente actual. ¿Desea continuar?',
+        () => {
+          const boxAcciones = document.getElementById('contenedor-acciones');
+          if (boxAcciones) boxAcciones.innerHTML =
+            `<span style="color:var(--danger); font-weight:600;">
+               <i class="fas fa-circle-notch spinner"></i> Desvinculando...
+             </span>`;
+
+          google.script.run
+            .withSuccessHandler(res => {
+              if (res.success) {
+                Portal_Core.mostrarToast('success', 'Desvinculado', 'El expediente fue retirado del caso.');
+              } else {
+                Portal_Core.mostrarToast('error', 'Error DB', res.message);
+              }
+              this.iniciarDetalle(this.estadoDetalle.idCaso);
+            })
+            .withFailureHandler(err => {
+              Portal_Core.mostrarToast('error', 'Fallo de Red', err.message);
+              this.iniciarDetalle(this.estadoDetalle.idCaso);
+            })
+            .gestionarAsociacionExpedienteBackend(
+              this.estadoDetalle.idCaso,
+              null,
+              window.USUARIO_ACTUAL.idAgente,
+              'desvincular'
+            );
+        }
+      );
+    }
+
+  });
+</script>

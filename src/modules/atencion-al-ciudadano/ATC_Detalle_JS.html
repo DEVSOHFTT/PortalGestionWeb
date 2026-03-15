@@ -1,0 +1,358 @@
+<script>
+  /**
+   * ========================================================================
+   * ATC_Detalle_JS.html
+   * PROYECTO: Portal de Gestión - Defensoría del Pueblo
+   * RESPONSABILIDAD: Ciclo de vida de la ficha del caso.
+   *   - Carga del paquete completo del caso desde el backend.
+   *   - Pintado de todos los paneles de la ficha.
+   *   - Timeline unificado (actuaciones + interacciones).
+   *   - Acciones sobre el estado del caso (tomar, finalizar, reabrir).
+   *   - Navegación (volver a bandeja, ir a ficha de ciudadano).
+   *   - NO contiene lógica de modales de actuaciones, interacciones,
+   *     derivaciones ni expedientes (están en sus propios archivos).
+   *   - Depende de: AppState_JS (ATC_App.estadoDetalle, USUARIO_ACTUAL),
+   *                 Core_JS (mostrarToast, mostrarConfirmacion),
+   *                 ATC_Bandeja_JS (checkNotificaciones).
+   * ========================================================================
+   */
+
+  Object.assign(window.ATC_App, {
+
+    // =========================================================
+    // INICIALIZACIÓN DEL DETALLE
+    // =========================================================
+    iniciarDetalle: function(id) {
+      if (this.temporizadores.bandeja) clearInterval(this.temporizadores.bandeja);
+
+      // Mover todos los modales al body para evitar problemas de z-index
+      ['modal-interaccion','modal-actuacion','modal-derivar','modal-expediente']
+        .forEach(mId => {
+          const el = document.getElementById(mId);
+          if (el && el.parentElement !== document.body) document.body.appendChild(el);
+        });
+
+      this.estadoDetalle.idCaso      = id;
+      this.estadoDetalle.idCiudadano = null;
+
+      document.getElementById('ruta-actual').innerText = `Caso #${id.substring(0,8).toUpperCase()}`;
+      document.getElementById('content-detalle').classList.add('hidden');
+      document.getElementById('loader-detalle').classList.remove('hidden');
+
+      this._resetPanelesDetalle();
+
+      google.script.run
+        .withSuccessHandler(res => {
+          if (!res.success) {
+            Portal_Core.mostrarToast('error', 'Error del Sistema', res.message);
+            this.volverABandeja();
+            return;
+          }
+          this.estadoDetalle.categoriaActual = res.gestion.categoria;
+          this.estadoDetalle.idEstado        = parseInt(res.gestion.idEstado);
+          this._pintarFichaDetalle(res);
+        })
+        .withFailureHandler(err => {
+          Portal_Core.mostrarToast('error', 'Fallo Crítico', err.message);
+          this.volverABandeja();
+        })
+        .obtenerPaqueteCompletoCaso(id);
+    },
+
+    volverABandeja: function() {
+      const modulo = this.estadoBandeja.modulo || 'MisCasos';
+      cargarModulo(modulo);
+    },
+
+    // =========================================================
+    // PINTADO DE LA FICHA
+    // =========================================================
+    _pintarFichaDetalle: function(res) {
+      const { gestion, ciudadano, historialUnificado } = res;
+      this.estadoDetalle.idCiudadano = ciudadano.id;
+
+      // ── ID y estado ──
+      document.getElementById('vc-id').innerText = gestion.id.toUpperCase();
+      this._pintarBadgeEstado(gestion.estado);
+
+      // ── Datos del caso ──
+      const campos = {
+        'vc-fecha':      gestion.fechaInicio,
+        'vc-canal':      gestion.canal,
+        'vc-categoria':  gestion.categoria,
+        'vc-prioridad':  gestion.prioridad,
+        'vc-obs':        gestion.observaciones || 'Sin observaciones registradas.'
+      };
+      Object.entries(campos).forEach(([id, val]) => {
+        const el = document.getElementById(id);
+        if (el) el.innerText = val || 'S/D';
+      });
+
+      // ── Datos del ciudadano ──
+      const esCiudadano = !ciudadano.es_organizacion;
+      document.getElementById('vc-ciudadano-nombre').innerText =
+        esCiudadano
+          ? `${ciudadano.apellido || ''}, ${ciudadano.nombre || ''}`.trim()
+          : ciudadano.nombre || 'S/D';
+      document.getElementById('vc-ciudadano-dni').innerText  = ciudadano.dni  || 'S/D';
+      document.getElementById('vc-ciudadano-tel').innerText  = ciudadano.telefono || 'S/D';
+      document.getElementById('vc-ciudadano-mail').innerText = ciudadano.email    || 'S/D';
+
+      // ── Botones contextuales según estado y pertenencia ──
+      this._configurarBotonesDetalle(gestion);
+
+      // ── Timeline ──
+      this.dibujarTimelineUnificado(historialUnificado);
+
+      document.getElementById('loader-detalle').classList.add('hidden');
+      document.getElementById('content-detalle').classList.remove('hidden');
+    },
+
+    _pintarBadgeEstado: function(estado) {
+      const estadoKey = estado.toUpperCase().trim();
+      const elBadge   = document.getElementById('vc-estado-badge');
+      if (!elBadge) return;
+
+      const MAPA = {
+        'PENDIENTE':  { icon: 'fa-clock',        bg: 'var(--warning-bg)',    color: 'var(--warning)',   border: 'var(--warning)' },
+        'ASIGNADO':   { icon: 'fa-user-check',   bg: 'var(--primary-light)', color: 'var(--primary)',   border: 'var(--primary)' },
+        'EN PROCESO': { icon: 'fa-play-circle',  bg: 'var(--success-bg)',    color: 'var(--success)',   border: 'var(--success)' },
+        'DERIVADO':   { icon: 'fa-share',        bg: '#f3f0f0',              color: 'var(--def-brown)', border: 'var(--def-brown)' },
+        'FINALIZADO': { icon: 'fa-check-double', bg: '#dcfce7',              color: '#10b981',          border: '#10b981' }
+      };
+
+      const cfg = MAPA[estadoKey] || { icon: 'fa-circle', bg: '#f1f5f9', color: '#64748b', border: '#64748b' };
+      elBadge.innerHTML         = `<i class="fas ${cfg.icon}"></i> ${estadoKey}`;
+      elBadge.style.background  = cfg.bg;
+      elBadge.style.color       = cfg.color;
+      elBadge.style.border      = `1px solid ${cfg.border}`;
+    },
+
+    _configurarBotonesDetalle: function(gestion) {
+      const boxTop           = document.getElementById('contenedor-acciones');
+      const boxBtnHistorial  = document.getElementById('box-btn-historial');
+      if (!boxTop) return;
+
+      const esMio    = String(gestion.idAgenteResp) === String(window.USUARIO_ACTUAL.idAgente);
+      const esMiArea = String(gestion.idArea)       === String(window.USUARIO_ACTUAL.idArea);
+      const bloqueado = [2, 3].includes(this.estadoDetalle.idEstado); // FINALIZADO / CERRADO
+
+      if (bloqueado) {
+        boxTop.innerHTML = `
+          <button class="btn btn-outline" onclick="ATC_App.ejecutarAccionDetalle('reabrir')"
+                  style="color:var(--warning); border-color:var(--warning);">
+            <i class="fas fa-redo"></i> Reabrir
+          </button>`;
+        if (boxBtnHistorial) boxBtnHistorial.innerHTML =
+          `<span style="font-size:0.85rem; color:var(--text-muted);">
+             <i class="fas fa-lock"></i> Caso cerrado. Esperando reapertura.
+           </span>`;
+        return;
+      }
+
+      if (this.estadoDetalle.idEstado === 4) { // PENDIENTE
+        boxTop.innerHTML = `
+          <button class="btn btn-primary" onclick="ATC_App.ejecutarAccionDetalle('tomar')">
+            <i class="fas fa-hand-paper"></i> Tomar Caso
+          </button>`;
+        return;
+      }
+
+      if (esMio) {
+        boxTop.innerHTML = `
+          <button class="btn btn-outline" onclick="ATC_App.abrirModalDerivar()">
+            <i class="fas fa-share"></i> Derivar
+          </button>
+          <button class="btn" style="background:#10b981; color:white;"
+                  onclick="ATC_App.ejecutarAccionDetalle('finalizar')">
+            <i class="fas fa-check-double"></i> Finalizar Caso
+          </button>`;
+        if (boxBtnHistorial) boxBtnHistorial.innerHTML = `
+          <button class="btn btn-outline btn-sm"
+                  style="color:var(--warning); border-color:var(--warning);"
+                  onclick="ATC_App.abrirModalInteraccion()">
+            <i class="far fa-comment-dots"></i> Agregar Interacción
+          </button>
+          <button class="btn btn-primary btn-sm" onclick="ATC_App.abrirModalActuacion()">
+            <i class="fas fa-plus"></i> Nueva Actuación
+          </button>`;
+      } else if (esMiArea) {
+        boxTop.innerHTML = `
+          <span style="background:var(--primary-light); color:var(--primary); padding:8px 16px;
+                       border-radius:8px; font-size:0.85rem; font-weight:700;
+                       border:1px solid rgba(63,34,186,0.15); box-shadow:var(--shadow-sm);">
+            <i class="fas fa-hands-helping"></i> MODO COLABORADOR
+          </span>`;
+        if (boxBtnHistorial) boxBtnHistorial.innerHTML = `
+          <button class="btn btn-outline btn-sm"
+                  style="color:var(--warning); border-color:var(--warning);"
+                  onclick="ATC_App.abrirModalInteraccion()">
+            <i class="far fa-comment-dots"></i> Agregar Interacción
+          </button>
+          <button class="btn btn-primary btn-sm" onclick="ATC_App.abrirModalActuacion()">
+            <i class="fas fa-plus"></i> Nueva Actuación
+          </button>`;
+      } else {
+        if (boxBtnHistorial) boxBtnHistorial.innerHTML =
+          `<span style="font-size:0.85rem; color:var(--text-muted);">
+             <i class="fas fa-user-lock"></i>
+             Asignado a ${gestion.agenteResp} (${gestion.areaNombre}).
+           </span>`;
+      }
+    },
+
+    // =========================================================
+    // ACCIONES SOBRE EL ESTADO DEL CASO
+    // =========================================================
+    ejecutarAccionDetalle: function(accion) {
+      const titulos = {
+        tomar:     '¿Tomar el Caso?',
+        reabrir:   '¿Reabrir el Caso?',
+        finalizar: '¿Finalizar el Caso?'
+      };
+      Portal_Core.mostrarConfirmacion(
+        titulos[accion] || '¿Confirmar Acción?',
+        '¿Confirma que desea realizar esta acción sobre el caso?',
+        () => {
+          const boxAcciones = document.getElementById('contenedor-acciones');
+          if (boxAcciones) boxAcciones.innerHTML =
+            `<span style="color:var(--primary); font-weight:600;">
+               <i class="fas fa-circle-notch spinner"></i> Ejecutando...
+             </span>`;
+
+          google.script.run
+            .withSuccessHandler(res => {
+              if (!res.success) {
+                Portal_Core.mostrarToast('warning', 'Atención', res.message);
+              } else {
+                Portal_Core.mostrarToast('success', 'Éxito', 'Estado actualizado correctamente.');
+                this.checkNotificaciones();
+              }
+              this.iniciarDetalle(this.estadoDetalle.idCaso);
+            })
+            .withFailureHandler(err => Portal_Core.mostrarToast('error', 'Fallo de Red', err.message))
+            .procesarAccionBackend(
+              accion,
+              this.estadoDetalle.idCaso,
+              window.USUARIO_ACTUAL.idAgente,
+              window.USUARIO_ACTUAL.nombre
+            );
+        }
+      );
+    },
+
+    // =========================================================
+    // TIMELINE UNIFICADO
+    // =========================================================
+    dibujarTimelineUnificado: function(lista) {
+      const box = document.getElementById('timeline-unificado');
+      if (!box) return;
+
+      if (!lista || lista.length === 0) {
+        box.innerHTML = `
+          <div style="text-align:center; padding:40px; color:var(--text-muted);
+                      background:#f8fafc; border-radius:12px;
+                      border:1px dashed var(--border-soft);">
+            <i class="fas fa-history fa-2x" style="opacity:0.3; margin-bottom:10px;"></i>
+            <p style="font-weight:500;">No hay movimientos registrados.</p>
+          </div>`;
+        return;
+      }
+
+      const bloqueado = [2, 3].includes(this.estadoDetalle.idEstado);
+
+      box.innerHTML = lista.map(i => {
+        const COLORES_TIPO = {
+          SISTEMA:     { color: 'var(--text-muted)',  icono: 'fa-robot',         titulo: 'Registro del Sistema' },
+          INTERACCION: { color: 'var(--primary)',     icono: 'fa-comment-dots',  titulo: 'Interacción' },
+          ACTUACION:   { color: 'var(--success)',     icono: 'fa-stream',        titulo: 'Actuación Formal' },
+          DERIVACION:  { color: 'var(--def-brown)',   icono: 'fa-share',         titulo: 'Derivación' }
+        };
+        const cfg   = COLORES_TIPO[i.tipo] || COLORES_TIPO.SISTEMA;
+        const color = cfg.color;
+
+        // Botón de edición solo para registros propios no bloqueados
+        let btnEdit = '';
+        if (!bloqueado && i.tipo !== 'SISTEMA' &&
+            String(i.agenteId) === String(window.USUARIO_ACTUAL.idAgente)) {
+          const dataStr = encodeURIComponent(JSON.stringify(i.dataCruda));
+          const fn = i.tipo === 'ACTUACION'
+            ? `ATC_App.abrirModalActuacion('${dataStr}')`
+            : `ATC_App.abrirModalInteraccion('${dataStr}')`;
+          btnEdit = `
+            <button onclick="${fn}"
+                    style="background:none; border:none; color:var(--text-muted);
+                           cursor:pointer; font-size:0.8rem; padding:4px 8px;
+                           border-radius:6px; transition:0.2s;"
+                    onmouseover="this.style.background='var(--bg-app)'"
+                    onmouseout="this.style.background='none'">
+              <i class="fas fa-pencil-alt"></i>
+            </button>`;
+        }
+
+        const subtituloHtml = i.subtitulo
+          ? `<div style="font-size:0.8rem; color:var(--text-muted); margin-bottom:6px;
+                         font-weight:600;">${i.subtitulo}</div>`
+          : '';
+
+        return `
+          <div class="tl-item">
+            <div class="tl-dot" style="background:${color};"></div>
+            <div class="tl-content">
+              <div style="display:flex; justify-content:space-between; align-items:center;
+                          margin-bottom:6px;">
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <i class="fas ${cfg.icono}" style="color:${color}; font-size:0.85rem;"></i>
+                  <span style="font-size:0.8rem; font-weight:700; color:var(--text-muted);">
+                    <i class="fas ${i.tipo === 'SISTEMA' ? 'fa-robot' : 'fa-user-tie'}"
+                       style="color:var(--text-muted); margin-right:4px;"></i>
+                    ${i.agente}
+                  </span>
+                </div>
+                <div style="display:flex; align-items:center; gap:6px;">
+                  <span style="color:var(--text-muted); font-weight:600; font-size:0.8rem;">
+                    ${i.fechaFormat} hs
+                  </span>
+                  ${btnEdit}
+                </div>
+              </div>
+              <div style="margin-bottom:4px; font-weight:700; color:${color};
+                          font-size:1.05rem; letter-spacing:-0.01em;">
+                ${i.titulo}
+              </div>
+              ${subtituloHtml}
+              <div style="font-size:0.95rem; line-height:1.6;
+                          color:${i.tipo === 'SISTEMA' ? 'var(--text-muted)' : 'var(--text-main)'};
+                          font-style:${i.tipo === 'SISTEMA' ? 'italic' : 'normal'};
+                          white-space:pre-wrap;">
+                ${i.texto}
+              </div>
+            </div>
+          </div>`;
+      }).join('');
+    },
+
+    // =========================================================
+    // PANEL COLLAPSIBLE
+    // =========================================================
+    togglePanelDetalle: function(panelId, iconId) {
+      const panel = document.getElementById(panelId);
+      const icon  = document.getElementById(iconId);
+      if (!panel) return;
+      const oculto = panel.classList.toggle('hidden');
+      if (icon) icon.style.transform = oculto ? 'rotate(180deg)' : 'rotate(0deg)';
+    },
+
+    _resetPanelesDetalle: function() {
+      ['panel-datos-caso','panel-datos-ciudadano-extra'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.classList.remove('hidden');
+      });
+      ['icon-datos-caso','icon-datos-ciudadano'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.transform = 'rotate(0deg)';
+      });
+    }
+
+  });
+</script>

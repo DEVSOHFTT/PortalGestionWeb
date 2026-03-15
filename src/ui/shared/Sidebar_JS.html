@@ -1,0 +1,101 @@
+<script>
+  /**
+   * ========================================================================
+   * Sidebar_JS.html
+   * PROYECTO: Portal de Gestión - Defensoría del Pueblo
+   * RESPONSABILIDAD: Control completo del menú lateral (sidebar).
+   *   - Construcción del menú contextual según el módulo activo.
+   *   - Apertura/cierre del sidebar (desktop y mobile).
+   *   - Navegación de regreso al hub.
+   *   - Para agregar un nuevo módulo con menú propio: añadir un nuevo
+   *     bloque else if en construirMenuSidebar() con su codigoModulo.
+   *   - Depende de: AppState_JS, Core_JS.
+   * ========================================================================
+   */
+
+  window.Portal_Core = window.Portal_Core || {};
+
+  Object.assign(window.Portal_Core, {
+
+    // =========================================================
+    // TOGGLE SIDEBAR (mobile / off-canvas)
+    // =========================================================
+    toggleSidebar: function() {
+      const sidebar = document.getElementById('sidebar');
+      const overlay = document.getElementById('sidebar-overlay');
+      if (!sidebar) return;
+      sidebar.classList.toggle('open');
+      if (overlay) overlay.classList.toggle('active', sidebar.classList.contains('open'));
+    },
+
+    cerrarSidebar: function() {
+      const sidebar = document.getElementById('sidebar');
+      const overlay = document.getElementById('sidebar-overlay');
+      if (!sidebar) return;
+      sidebar.classList.remove('open');
+      if (overlay) overlay.classList.remove('active');
+    },
+
+    // =========================================================
+    // VOLVER AL HUB PRINCIPAL
+    // =========================================================
+    volverAlHub: function() {
+      cargarModulo('PortalHome');
+    },
+
+    // =========================================================
+    // CONSTRUCCIÓN DEL MENÚ CONTEXTUAL
+    // Cada módulo define sus propios ítems de navegación.
+    // Para agregar un nuevo módulo: agregar un bloque else if
+    // con el codigoModulo correspondiente.
+    // =========================================================
+    construirMenuSidebar: function(codigoModulo) {
+      const menu = document.getElementById('sidebar-contextual-menu');
+      if (!menu) return;
+
+      const seccion = (label) =>
+        `<div style="padding:15px 16px 5px; font-size:0.7rem; font-weight:700;
+                     color:var(--text-muted); text-transform:uppercase;
+                     letter-spacing:0.05em;">${label}</div>`;
+
+      const item = (id, icono, label) =>
+        `<li onclick="cargarModulo('${id}')" id="m-${id}">
+           <i class="fas ${icono}"></i> ${label}
+         </li>`;
+
+      if (codigoModulo === 'ATC') {
+        menu.innerHTML = `
+          ${seccion('Atención al Ciudadano')}
+          ${item('BuscarCiudadano', 'fa-search',     'Buscar Ciudadano')}
+          ${seccion('Bandejas de Trabajo')}
+          ${item('MisCasos',        'fa-user-check', 'Mis Casos')}
+          ${item('MiArea',          'fa-building',   'Mi Área')}
+          ${item('TodosLosCasos',   'fa-database',   'Histórico General')}
+        `;
+      }
+
+      else if (codigoModulo === 'INV') {
+        menu.innerHTML = `
+          ${seccion('Operativa de Campo')}
+          ${item('InventarioScan',   'fa-qrcode', 'Escanear Activo (QR)')}
+          ${seccion('Gestión e Informes')}
+          ${item('InventarioBandeja','fa-boxes',  'Inventario General')}
+        `;
+      }
+
+      // Agregar nuevos módulos aquí:
+      // else if (codigoModulo === 'RRHH') { ... }
+    },
+
+    // =========================================================
+    // MARCAR ÍTEM ACTIVO EN EL MENÚ
+    // =========================================================
+    marcarItemActivo: function(accionLogica) {
+      document.querySelectorAll('.menu li').forEach(li => li.classList.remove('active'));
+      const itemActivo = document.getElementById('m-' + accionLogica);
+      if (itemActivo) itemActivo.classList.add('active');
+    }
+
+  });
+
+</script>

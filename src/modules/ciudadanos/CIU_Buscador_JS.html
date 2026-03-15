@@ -1,0 +1,440 @@
+<script>
+  /**
+   * ========================================================================
+   * CIU_Buscador_JS.html
+   * PROYECTO: Portal de Gestión - Defensoría del Pueblo
+   * RESPONSABILIDAD: Búsqueda de ciudadanos en el padrón central.
+   *   - Inicialización de la vista de búsqueda.
+   *   - Búsqueda por DNI/CUIT y presentación del historial.
+   *   - Renderizado del historial de casos del ciudadano.
+   *   - Cambio dinámico de tipo de entidad (persona/organización).
+   *   - Validación y armado del objeto ciudadano antes de continuar.
+   *   - Navegación a caso duplicado.
+   *   - No conoce la lógica de recepción (Paso 2) ni de Ficha.
+   *   - Depende de: AppState_JS (ATC_App.estadoNuevaRecepcion, Memoria, USUARIO_ACTUAL),
+   *                 Core_JS (mostrarToast, mostrarConfirmacion, poblarSelect).
+   * ========================================================================
+   */
+
+  Object.assign(window.ATC_App, {
+
+    // =========================================================
+    // INICIALIZACIÓN
+    // =========================================================
+    iniciarBuscarCiudadano: function() {
+      if (this.temporizadores.bandeja) clearInterval(this.temporizadores.bandeja);
+
+      document.getElementById('ruta-actual').innerText = 'Buscar Ciudadano';
+
+      this.estadoNuevaRecepcion.ciudadanoActual      = null;
+      this.estadoNuevaRecepcion.casosCiudadanoActual = [];
+
+      document.getElementById('loader-nr').classList.add('hidden');
+      document.getElementById('form-ciudadano').classList.remove('hidden');
+      document.getElementById('resumen-ciudadano').classList.add('hidden');
+      document.getElementById('wrapper-formularios').classList.remove('hidden');
+
+      document.getElementById('nr-busqueda-dni').value   = '';
+      document.getElementById('nr-msg-ciudadano').innerText = '';
+      document.getElementById('nr-ciudadano-id').value   = '';
+
+      const badgeContador = document.getElementById('badge-contador-casos');
+      if (badgeContador) badgeContador.classList.add('hidden');
+
+      document.getElementById('contenedor-historial-ciudadano').innerHTML = `
+        <div class="historial-vacio">
+          <i class="fas fa-search-location fa-3x" style="opacity:0.1; margin-bottom:15px;"></i>
+          <p>Ingrese un Documento o CUIT para auditar antecedentes</p>
+        </div>`;
+
+      document.getElementById('btn-continuar-recepcion').classList.add('hidden');
+      document.getElementById('contenedor-locacion').style.opacity = '1';
+
+      this._INPUTS_CIUDADANO.forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        if (el.type === 'checkbox') el.checked = false; else el.value = '';
+        el.disabled = true;
+        el.classList.remove('input-locked');
+      });
+
+      const cacheATC = Memoria.leer('diccionariosATC');
+      if (cacheATC) {
+        if (cacheATC.barrios)      Portal_Core.poblarSelect('nr-ciu-barrio', cacheATC.barrios);
+        if (cacheATC.tipos_entidad) Portal_Core.poblarSelect('nr-ciu-tipo-entidad', cacheATC.tipos_entidad);
+      } else {
+        google.script.run
+          .withSuccessHandler(res => {
+            if (res && res.success) {
+              Memoria.guardar('diccionariosATC', res.data);
+              Portal_Core.poblarSelect('nr-ciu-barrio',       res.data.barrios);
+              Portal_Core.poblarSelect('nr-ciu-tipo-entidad', res.data.tipos_entidad);
+            }
+          })
+          .obtenerDiccionariosATCBackend();
+      }
+
+      setTimeout(() => document.getElementById('nr-busqueda-dni').focus(), 100);
+    },
+
+    // Lista centralizada de inputs del formulario de ciudadano
+    _INPUTS_CIUDADANO: [
+      'nr-ciu-tipo-entidad','nr-ciu-nombre','nr-ciu-apellido','nr-ciu-cuil',
+      'nr-ciu-dni','nr-ciu-fecha-nac','nr-ciu-genero','nr-ciu-tel','nr-ciu-email',
+      'nr-ciu-calle','nr-ciu-altura','nr-ciu-piso','nr-ciu-dpto',
+      'nr-ciu-barrio','nr-ciu-otra-prov'
+    ],
+
+    // =========================================================
+    // BÚSQUEDA EN EL PADRÓN
+    // =========================================================
+    buscarCiudadano: function() {
+      const valorBuscado = document.getElementById('nr-busqueda-dni').value.trim();
+      const msg          = document.getElementById('nr-msg-ciudadano');
+      const btnContinuar = document.getElementById('btn-continuar-recepcion');
+
+      if (!valorBuscado) {
+        return Portal_Core.mostrarToast('warning', 'Dato requerido', 'Por favor, ingrese un Documento para buscar.');
+      }
+
+      msg.innerHTML  = '<i class="fas fa-circle-notch fa-spin"></i> Buscando en el Padrón Central...';
+      msg.style.color = 'var(--text-muted)';
+
+      document.getElementById('contenedor-historial-ciudadano').innerHTML = `
+        <div class="historial-vacio">
+          <i class="fas fa-spinner fa-spin fa-2x" style="color:var(--primary); margin-bottom:15px;"></i>
+          <p>Analizando gestiones previas...</p>
+        </div>`;
+
+      btnContinuar.classList.add('hidden');
+      this.estadoNuevaRecepcion.ciudadanoActual      = null;
+      this.estadoNuevaRecepcion.casosCiudadanoActual = [];
+
+      google.script.run
+        .withSuccessHandler(res => {
+          if (res.encontrado) {
+            msg.innerHTML = '';
+            document.getElementById('nr-ciudadano-id').value = res.data.ciudadano_id;
+
+            // Poblar formulario con datos existentes
+            const mapa = {
+              'nr-ciu-tipo-entidad': res.data.tipo_entidad_id,
+              'nr-ciu-nombre':       res.data.nombre,
+              'nr-ciu-apellido':     res.data.apellido !== '-' ? res.data.apellido : '',
+              'nr-ciu-cuil':         res.data.cuil,
+              'nr-ciu-dni':          res.data.dni,
+              'nr-ciu-fecha-nac':    res.data.fecha_nacimiento,
+              'nr-ciu-genero':       res.data.genero_id,
+              'nr-ciu-tel':          res.data.telefono,
+              'nr-ciu-email':        res.data.email,
+              'nr-ciu-calle':        res.data.calle,
+              'nr-ciu-altura':       res.data.altura,
+              'nr-ciu-piso':         res.data.piso,
+              'nr-ciu-dpto':         res.data.dpto,
+              'nr-ciu-barrio':       res.data.barrio_id
+            };
+
+            Object.entries(mapa).forEach(([id, val]) => {
+              const el = document.getElementById(id);
+              if (el) { el.value = val || ''; el.disabled = false; }
+            });
+
+            const checkOtraProv = document.getElementById('nr-ciu-otra-prov');
+            if (checkOtraProv) {
+              checkOtraProv.checked  = !!res.data.otra_provincia;
+              checkOtraProv.disabled = false;
+            }
+
+            this.cambiarTipoEntidad();
+
+            // Mostrar resumen colapsado
+            document.getElementById('resumen-ciudadano').classList.remove('hidden');
+            document.getElementById('wrapper-formularios').classList.add('hidden');
+            document.getElementById('contenedor-locacion').style.opacity = '0.4';
+
+            this.estadoNuevaRecepcion.casosCiudadanoActual = res.historial || [];
+            this.dibujarHistorialCiudadano(res.historial || []);
+
+          } else {
+            // Ciudadano nuevo
+            msg.innerHTML  = '<i class="fas fa-user-plus"></i> Registro Nuevo. Complete la Ficha.';
+            msg.style.color = 'var(--warning)';
+
+            document.getElementById('nr-ciudadano-id').value = '';
+            document.getElementById('resumen-ciudadano').classList.add('hidden');
+            document.getElementById('wrapper-formularios').classList.remove('hidden');
+
+            this._INPUTS_CIUDADANO.forEach(id => {
+              const el = document.getElementById(id);
+              if (!el) return;
+              if (el.type === 'checkbox') el.checked = false; else el.value = '';
+              if (id !== 'nr-ciu-dni') el.disabled = false;
+            });
+            document.getElementById('contenedor-locacion').style.opacity = '1';
+
+            // Detectar tipo por longitud del CUIT
+            const tipoDefecto = (valorBuscado.length === 11 &&
+              ['30','33','34'].includes(valorBuscado.substring(0,2))) ? '2' : '1';
+            document.getElementById('nr-ciu-tipo-entidad').value = tipoDefecto;
+
+            if (valorBuscado.length === 11) {
+              document.getElementById('nr-ciu-cuil').value = valorBuscado;
+              document.getElementById('nr-ciu-dni').value  =
+                parseInt(valorBuscado.substring(2, 10), 10).toString();
+            } else {
+              document.getElementById('nr-ciu-dni').value = valorBuscado;
+            }
+
+            this.cambiarTipoEntidad();
+
+            const badgeContador = document.getElementById('badge-contador-casos');
+            if (badgeContador) badgeContador.classList.add('hidden');
+
+            document.getElementById('contenedor-historial-ciudadano').innerHTML = `
+              <div class="historial-vacio">
+                <i class="fas fa-user-plus fa-3x"
+                   style="opacity:0.2; margin-bottom:15px; color:var(--primary);"></i>
+                <p>Es la primera vez que esta entidad se contacta.</p>
+              </div>`;
+
+            document.getElementById('nr-ciu-nombre').focus();
+            Portal_Core.mostrarToast('info', 'Nuevo Registro', 'Por favor, complete los datos de la entidad.');
+          }
+
+          btnContinuar.classList.remove('hidden');
+        })
+        .withFailureHandler(err => {
+          msg.innerHTML = '';
+          Portal_Core.mostrarToast('error', 'Fallo de Conexión', 'No se pudo conectar con el Padrón.');
+          document.getElementById('contenedor-historial-ciudadano').innerHTML = `
+            <div class="historial-vacio" style="color:var(--danger);">
+              <i class="fas fa-exclamation-triangle fa-2x" style="margin-bottom:15px;"></i>
+              <p>Fallo de red al buscar el historial.</p>
+            </div>`;
+        })
+        .buscarCiudadanoBackend(valorBuscado);
+    },
+
+    // =========================================================
+    // HISTORIAL DE CASOS DEL CIUDADANO
+    // =========================================================
+    dibujarHistorialCiudadano: function(casos) {
+      const box          = document.getElementById('contenedor-historial-ciudadano');
+      const badgeContador = document.getElementById('badge-contador-casos');
+
+      if (badgeContador) {
+        badgeContador.innerText = `${casos ? casos.length : 0} CASOS`;
+        badgeContador.classList.remove('hidden');
+      }
+
+      if (!casos || casos.length === 0) {
+        box.innerHTML = `
+          <div class="historial-vacio">
+            <i class="fas fa-folder-open fa-3x" style="opacity:0.2; margin-bottom:15px;"></i>
+            <p>Sin gestiones previas registradas.</p>
+          </div>`;
+        return;
+      }
+
+      const COLORES_ESTADO = {
+        'PENDIENTE':  { color: 'var(--warning)',   bg: 'var(--warning-bg)' },
+        'ASIGNADO':   { color: 'var(--primary)',   bg: 'var(--primary-light)' },
+        'EN PROCESO': { color: 'var(--success)',   bg: 'var(--success-bg)' },
+        'DERIVADO':   { color: 'var(--def-brown)', bg: '#f3f0f0' },
+        'FINALIZADO': { color: '#10b981',          bg: '#dcfce7' }
+      };
+
+      box.innerHTML = `
+        <div style="padding:12px 24px; font-weight:800; color:var(--text-muted);
+                    font-size:0.75rem; text-transform:uppercase;
+                    border-bottom:1px solid var(--border-soft); background:#f8fafc;
+                    letter-spacing:0.5px;">
+          Haga clic sobre un registro para abrir la ficha técnica
+        </div>
+        <div style="display:flex; flex-direction:column; width:100%;
+                    padding:15px 24px; gap:12px; background:#f8fafc;">
+      ` + casos.map(c => {
+        const estadoKey = c.estado.toUpperCase().trim();
+        const { color, bg } = COLORES_ESTADO[estadoKey] || { color: '#64748b', bg: '#f1f5f9' };
+
+        const expTag = c.expediente
+          ? `<span style="font-size:0.7rem; font-weight:700; padding:2px 8px; border-radius:10px;
+                          background:#e0f2fe; color:#0369a1; border:1px solid #bae6fd;">
+               <i class="fas fa-folder-open"></i> EXP-${c.expediente.substring(0,6).toUpperCase()}
+             </span>`
+          : '';
+
+        return `
+          <div onclick="cargarModulo('DetalleCaso','${c.id}')"
+               style="background:white; border:1px solid var(--border-soft); border-radius:10px;
+                      padding:14px 18px; cursor:pointer; transition:0.2s;
+                      border-left:4px solid ${color};"
+               onmouseover="this.style.boxShadow='var(--shadow-md)'"
+               onmouseout="this.style.boxShadow='none'">
+            <div style="display:flex; justify-content:space-between; align-items:center;
+                        margin-bottom:6px;">
+              <span style="font-family:monospace; font-size:0.8rem; font-weight:700;
+                           color:var(--primary);">
+                #${c.id.substring(0,8).toUpperCase()}
+              </span>
+              <span style="font-size:0.75rem; font-weight:700; padding:3px 10px;
+                           border-radius:20px; background:${bg}; color:${color};
+                           border:1px solid ${color};">
+                ${c.estado}
+              </span>
+            </div>
+            <div style="font-size:0.85rem; font-weight:600; color:var(--text-main);
+                        margin-bottom:4px;">
+              ${c.categoria}
+            </div>
+            <div style="font-size:0.75rem; color:var(--text-muted); display:flex;
+                        gap:8px; align-items:center; flex-wrap:wrap;">
+              <span><i class="far fa-calendar"></i> ${c.fecha ? c.fecha.split(' ')[0] : ''}</span>
+              <span><i class="fas fa-user-tie"></i> ${c.agente || 'Sin asignar'}</span>
+              ${expTag}
+            </div>
+          </div>`;
+      }).join('') + '</div>';
+    },
+
+    // =========================================================
+    // CAMBIO DINÁMICO DE TIPO DE ENTIDAD
+    // =========================================================
+    cambiarTipoEntidad: function() {
+      const tipo       = document.getElementById('nr-ciu-tipo-entidad').value;
+      const esCiudadano = (tipo === '1' || tipo === '');
+      const esNuevo    = !document.getElementById('nr-ciudadano-id').value;
+      const valorBuscado = document.getElementById('nr-busqueda-dni').value.trim();
+
+      const idsOcultar        = ['nr-box-dni','nr-box-apellido','nr-box-nacimiento','nr-box-genero'];
+      const inputsObligatorios = ['nr-ciu-dni','nr-ciu-apellido','nr-ciu-fecha-nac','nr-ciu-genero'];
+      const lblNombre = document.getElementById('lbl-nombre');
+      const inputDni  = document.getElementById('nr-ciu-dni');
+      const inputCuil = document.getElementById('nr-ciu-cuil');
+
+      if (esCiudadano) {
+        idsOcultar.forEach(id => document.getElementById(id)?.classList.remove('hidden'));
+        inputsObligatorios.forEach(id => {
+          const el = document.getElementById(id);
+          if (el) el.required = true;
+        });
+        if (lblNombre) lblNombre.innerHTML = 'Nombres <span class="req">*</span>';
+
+        document.getElementById('nr-box-cuil').style.order = '5';
+        document.getElementById('nr-box-tel').style.order  = '8';
+        const lblCuil = document.getElementById('lbl-cuil');
+        if (lblCuil) lblCuil.innerHTML = 'CUIL <span class="req">*</span>';
+
+        if (esNuevo && inputDni) {
+          inputDni.value = valorBuscado.length === 11
+            ? parseInt(valorBuscado.substring(2, 10), 10).toString()
+            : valorBuscado;
+        }
+      } else {
+        // Organización/Entidad
+        idsOcultar.forEach(id => document.getElementById(id)?.classList.add('hidden'));
+        inputsObligatorios.forEach(id => {
+          const el = document.getElementById(id);
+          if (el) { el.required = false; el.value = ''; }
+        });
+        if (lblNombre) lblNombre.innerHTML = 'Razón Social / Nombre <span class="req">*</span>';
+
+        document.getElementById('nr-box-cuil').style.order = '2';
+        document.getElementById('nr-box-tel').style.order  = '5';
+        const lblCuil = document.getElementById('lbl-cuil');
+        if (lblCuil) lblCuil.innerHTML = 'CUIT <span class="req">*</span>';
+
+        if (esNuevo && inputCuil) inputCuil.value = valorBuscado;
+        if (inputDni) inputDni.value = '';
+      }
+    },
+
+    // =========================================================
+    // VALIDACIÓN Y NAVEGACIÓN AL PASO 2
+    // =========================================================
+    continuarARecepcion: function(e) {
+      if (e) e.preventDefault();
+
+      const idCiu      = document.getElementById('nr-ciudadano-id').value;
+      const esNuevo    = !idCiu;
+      const tipoEntidad = document.getElementById('nr-ciu-tipo-entidad').value;
+      const nombre     = document.getElementById('nr-ciu-nombre').value.trim();
+      const apellido   = document.getElementById('nr-ciu-apellido').value.trim();
+      const cuil       = document.getElementById('nr-ciu-cuil').value.trim();
+      const dniForm    = document.getElementById('nr-ciu-dni').value.trim();
+      const fechaNac   = document.getElementById('nr-ciu-fecha-nac').value;
+      const genero     = document.getElementById('nr-ciu-genero').value;
+      const tel        = document.getElementById('nr-ciu-tel').value.trim();
+      const esOtraProv = document.getElementById('nr-ciu-otra-prov').checked;
+      const barrio     = document.getElementById('nr-ciu-barrio').value;
+
+      if (esNuevo) {
+        if (!tipoEntidad || !nombre || !cuil) {
+          return Portal_Core.mostrarToast('error', 'Campos Incompletos',
+            'Tipo de Entidad, Nombres y CUIL son obligatorios.');
+        }
+        if (cuil.length !== 11) {
+          return Portal_Core.mostrarToast('warning', 'Validación',
+            'El CUIL/CUIT debe tener exactamente 11 dígitos numéricos.');
+        }
+        if (tel && tel.length < 10) {
+          return Portal_Core.mostrarToast('warning', 'Validación',
+            'El teléfono debe tener al menos 10 dígitos (Cód de área + Número).');
+        }
+        if (tipoEntidad === '1') {
+          if (!apellido || !dniForm || !fechaNac || !genero) {
+            return Portal_Core.mostrarToast('error', 'Campos Incompletos',
+              'Para Ciudadanos: Apellidos, DNI, Nacimiento y Género son obligatorios.');
+          }
+          if (dniForm.length < 7 || dniForm.length > 8) {
+            return Portal_Core.mostrarToast('warning', 'Validación',
+              'El DNI debe tener 7 u 8 dígitos numéricos.');
+          }
+          if (cuil.substring(2, 10) !== dniForm.padStart(8, '0')) {
+            return Portal_Core.mostrarToast('error', 'Inconsistencia',
+              'El DNI ingresado no coincide con la raíz del CUIL.');
+          }
+        }
+        if (!esOtraProv && !barrio) {
+          return Portal_Core.mostrarToast('error', 'Ubicación Incompleta',
+            'Debe indicar el Barrio o marcar que reside en otra provincia.');
+        }
+      }
+
+      this.estadoNuevaRecepcion.ciudadanoActual = {
+        id:              idCiu,
+        tipo_entidad_id: tipoEntidad,
+        dni:             tipoEntidad === '1' && dniForm ? dniForm : null,
+        nombre,
+        apellido:        tipoEntidad === '1' && apellido ? apellido : '-',
+        cuil,
+        fecha_nacimiento: tipoEntidad === '1' && fechaNac ? fechaNac : null,
+        genero_id:        tipoEntidad === '1' && genero   ? genero   : null,
+        telefono:         tel,
+        email:            document.getElementById('nr-ciu-email').value,
+        otra_provincia:   esOtraProv,
+        barrio_id:        barrio || null,
+        calle:            document.getElementById('nr-ciu-calle').value,
+        altura:           document.getElementById('nr-ciu-altura').value,
+        piso:             document.getElementById('nr-ciu-piso').value,
+        dpto:             document.getElementById('nr-ciu-dpto').value
+      };
+
+      cargarModulo('NuevaRecepcionPaso2');
+    },
+
+    // =========================================================
+    // NAVEGACIÓN A CASO DUPLICADO
+    // =========================================================
+    irACasoDuplicado: function() {
+      const idCaso = this.estadoNuevaRecepcion.idCasoDuplicadoCache;
+      if (!idCaso) return;
+      Portal_Core.mostrarConfirmacion(
+        '¿Abrir Ficha Existente?',
+        `Saldrá de la creación de la recepción actual y navegará al Caso #${idCaso.substring(0,8).toUpperCase()}. ¿Desea continuar?`,
+        () => cargarModulo('DetalleCaso', idCaso)
+      );
+    }
+
+  });
+</script>

@@ -1,87 +1,90 @@
 <script>
+  /**
+   * ========================================================================
+   * Core_JS.html
+   * PROYECTO: Portal de Gestión - Defensoría del Pueblo
+   * RESPONSABILIDAD: Utilidades de UI puras y reutilizables.
+   *   - Toast, confirmación modal, poblarSelect, reproducirSonido.
+   *   - No conoce módulos, rutas, sesión ni notificaciones.
+   *   - Depende de: AppState_JS (ninguna dependencia de estado directa,
+   *     solo necesita que window.Portal_Core exista).
+   * ========================================================================
+   */
+
   window.Portal_Core = window.Portal_Core || {};
 
   Object.assign(window.Portal_Core, {
-    
-    poblarSelect: function(idSelect, datos, textoPorDefecto = 'Seleccione...') {
-      const select = document.getElementById(idSelect);
-      if (!select) return;
-      
-      select.innerHTML = `<option value="">${textoPorDefecto}</option>`;
-      
-      if(datos && datos.length > 0) {
-        datos.forEach(d => {
-          const opt = document.createElement('option');
-          opt.value = d.id;
-          opt.text = d.nombre || (d.apellido ? `${d.apellido}, ${d.nombre}` : d.id);
-          select.appendChild(opt);
-        });
-      }
-    },
 
+    // =========================================================
+    // SONIDO
+    // =========================================================
     reproducirSonido: function(tipo) {
-        const baseUrl = "https://actions.google.com/sounds/v1/";
-        const audios = {
-            'success': baseUrl + 'water/water_drop.ogg',
-            'error': baseUrl + 'alarms/error_beep.ogg',
-            'warning': baseUrl + 'ui/pop_up_close.ogg',
-            'info': baseUrl + 'ui/slide_click.ogg',
-            'campana': baseUrl + 'ui/message_notification.ogg'
-        };
-        
-        const url = audios[tipo] || audios['info'];
-        const audio = new Audio(url);
-        audio.volume = 0.4; 
-        audio.play().catch(e => console.log('Sonido bloqueado temporalmente por política del navegador'));
+      const base = 'https://actions.google.com/sounds/v1/';
+      const audios = {
+        success: base + 'water/water_drop.ogg',
+        error:   base + 'alarms/error_beep.ogg',
+        warning: base + 'ui/pop_up_close.ogg',
+        info:    base + 'ui/slide_click.ogg',
+        campana: base + 'ui/message_notification.ogg'
+      };
+      const audio = new Audio(audios[tipo] || audios['info']);
+      audio.volume = 0.4;
+      audio.play().catch(() => {});
     },
 
+    // =========================================================
+    // SISTEMA DE TOASTS
+    // =========================================================
     mostrarToast: function(tipo, titulo, mensaje, duracion = 5000, conSonido = true) {
       if (conSonido) this.reproducirSonido(tipo);
-      
+
       const container = document.getElementById('toast-container');
       if (!container) return;
 
+      const iconos = {
+        success: 'fa-check-circle',
+        error:   'fa-exclamation-triangle',
+        warning: 'fa-exclamation-circle',
+        info:    'fa-info-circle'
+      };
+
       const toast = document.createElement('div');
       toast.className = `toast-card toast-${tipo}`;
-      
-      let iconClass = "fa-info-circle";
-      if(tipo === 'success') iconClass = "fa-check-circle";
-      if(tipo === 'error') iconClass = "fa-exclamation-triangle";
-      if(tipo === 'warning') iconClass = "fa-exclamation-circle";
-
       toast.innerHTML = `
-        <div class="toast-icon"><i class="fas ${iconClass}"></i></div>
+        <div class="toast-icon"><i class="fas ${iconos[tipo] || iconos.info}"></i></div>
         <div class="toast-content">
           <div class="toast-title">${titulo}</div>
           <div class="toast-message">${mensaje}</div>
         </div>
-        <button class="toast-close" onclick="this.parentElement.remove()"><i class="fas fa-times"></i></button>
+        <button class="toast-close" onclick="this.parentElement.remove()">
+          <i class="fas fa-times"></i>
+        </button>
       `;
 
       container.appendChild(toast);
       setTimeout(() => toast.classList.add('show'), 50);
-
       setTimeout(() => {
         toast.classList.remove('show');
-        setTimeout(() => toast.remove(), 400); 
+        setTimeout(() => toast.remove(), 400);
       }, duracion);
     },
 
+    // =========================================================
+    // MODAL DE CONFIRMACIÓN
+    // =========================================================
     confirmCallback: null,
 
     mostrarConfirmacion: function(titulo, mensaje, onConfirm) {
       this.reproducirSonido('info');
       document.getElementById('confirm-title').innerText = titulo;
-      document.getElementById('confirm-msg').innerText = mensaje;
+      document.getElementById('confirm-msg').innerText   = mensaje;
       this.confirmCallback = onConfirm;
       document.getElementById('custom-confirm-modal').classList.remove('hidden');
     },
 
     ejecutarConfirmacion: function() {
       document.getElementById('custom-confirm-modal').classList.add('hidden');
-      if(typeof this.confirmCallback === 'function') {
-        this.confirmCallback();
-      }
+      if (typeof this.confirmCallback === 'function') this.confirmCallback();
       this.confirmCallback = null;
     },
 
@@ -92,122 +95,27 @@
 
     cerrarModal: function(idModal) {
       const modal = document.getElementById(idModal);
-      if(modal) modal.classList.add('hidden');
+      if (modal) modal.classList.add('hidden');
     },
 
-    // ==========================================
-    // SISTEMA GLOBAL DE NOTIFICACIONES
-    // ==========================================
-    estadoNotificaciones: [],
-    estadoTotalNotis: 0,
-    temporizadorNotificaciones: null,
+    // =========================================================
+    // UTILIDAD: POBLAR SELECTS
+    // =========================================================
+    poblarSelect: function(idSelect, datos, textoPorDefecto = 'Seleccione...') {
+      const select = document.getElementById(idSelect);
+      if (!select) return;
 
-    iniciarNotificaciones: function(lista, total) {
-       this.estadoNotificaciones = lista || [];
-       this.estadoTotalNotis = total || 0;
-       this.renderizarBadge();
-       this.arrancarMotorFondo();
-    },
+      select.innerHTML = `<option value="">${textoPorDefecto}</option>`;
 
-    renderizarBadge: function() {
-       const badge = document.getElementById('badge-notificaciones');
-       if (badge) {
-           if (this.estadoTotalNotis > 0) {
-               badge.innerText = this.estadoTotalNotis > 99 ? '99+' : this.estadoTotalNotis;
-               badge.classList.remove('hidden');
-           } else {
-               badge.classList.add('hidden');
-           }
-       }
-    },
-
-    arrancarMotorFondo: function() {
-       if(this.temporizadorNotificaciones) clearInterval(this.temporizadorNotificaciones);
-       this.temporizadorNotificaciones = setInterval(() => {
-           if(!window.USUARIO_ACTUAL) return;
-           google.script.run
-           .withSuccessHandler(res => {
-               if(res.success) {
-                   const oldTotal = this.estadoTotalNotis;
-                   this.estadoNotificaciones = res.lista;
-                   this.estadoTotalNotis = res.total;
-                   this.renderizarBadge();
-                   
-                   if (res.total > oldTotal) {
-                       this.mostrarToast('info', 'Actualización de Bandeja', `Tienes ${res.total} casos que requieren atención.`, 8000, false);
-                       this.reproducirSonido('campana');
-                   }
-                   
-                   const panel = document.getElementById('panel-notificaciones');
-                   if(panel && !panel.classList.contains('hidden')) this.renderizarPanelNotificaciones();
-               }
-           })
-           .obtenerNotificacionesBackend(window.USUARIO_ACTUAL.idAgente, window.USUARIO_ACTUAL.idArea);
-       }, 30000); // Consulta cada 30 segundos
-    },
-
-    togglePanelNotificaciones: function() {
-       const panel = document.getElementById('panel-notificaciones');
-       if(!panel) return;
-       panel.classList.toggle('hidden');
-       if(!panel.classList.contains('hidden')) this.renderizarPanelNotificaciones();
-    },
-
-    renderizarPanelNotificaciones: function() {
-       const body = document.getElementById('panel-notis-body');
-       const count = document.getElementById('panel-notis-count');
-       if(!body || !count) return;
-       
-       count.innerText = `${this.estadoTotalNotis} PENDIENTES`;
-       
-       if(this.estadoNotificaciones.length === 0) {
-           body.innerHTML = `
-            <div style="padding: 40px 20px; text-align: center; color: var(--text-muted);">
-              <i class="far fa-check-circle fa-3x" style="margin-bottom: 15px; color: var(--success); opacity: 0.5;"></i>
-              <p style="font-size: 0.95rem; font-weight: 600; color: var(--text-main);">¡Estás al día!</p>
-              <p style="font-size: 0.8rem;">No tienes tareas urgentes esperando.</p>
-            </div>`;
-           return;
-       }
-       
-       let html = '';
-       this.estadoNotificaciones.forEach(n => {
-          let icon = n.tipo === 'personal' ? 'fa-user-tag' : 'fa-users';
-          let color = n.tipo === 'personal' ? 'var(--warning)' : 'var(--primary)';
-          let bg = n.tipo === 'personal' ? 'var(--warning-bg)' : 'var(--primary-light)';
-
-          html += `
-          <div onclick="Portal_Core.togglePanelNotificaciones(); cargarModulo('DetalleCaso', '${n.id}')"
-               style="padding: 15px 20px; border-bottom: 1px solid var(--border-soft); cursor: pointer; transition: 0.2s; display: flex; gap: 15px; align-items: flex-start;"
-               onmouseover="this.style.backgroundColor='var(--bg-app)'" onmouseout="this.style.backgroundColor='white'">
-              <div style="width: 38px; height: 38px; border-radius: 10px; background: ${bg}; color: ${color}; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 1rem;">
-                  <i class="fas ${icon}"></i>
-              </div>
-              <div>
-                  <div style="font-size: 0.85rem; font-weight: 700; color: var(--text-main); margin-bottom: 4px;">
-                      ${n.titulo} <span style="font-family: monospace; font-size: 0.75rem; color: var(--text-muted); font-weight: 500; margin-left: 4px;">#${n.id.substring(0,6).toUpperCase()}</span>
-                  </div>
-                  <div style="font-size: 0.8rem; color: var(--text-muted); line-height: 1.3; font-weight: 500;">${n.mensaje}</div>
-                  <div style="font-size: 0.7rem; color: var(--text-light); margin-top: 6px; font-weight: 600;"><i class="far fa-clock"></i> ${n.fecha.split(' ')[0]}</div>
-              </div>
-          </div>`;
-       });
-       
-       if(this.estadoTotalNotis > this.estadoNotificaciones.length) {
-          html += `<div style="padding: 12px; text-align: center; font-size: 0.75rem; color: var(--text-muted); font-style: italic; background: white;">Mostrando recientes...</div>`;
-       }
-       body.innerHTML = html;
-    }
-  });
-
-  // Cerrar panel de notificaciones al hacer clic afuera
-  document.addEventListener('click', function(event) {
-      const panel = document.getElementById('panel-notificaciones');
-      const btn = document.getElementById('btn-campana-notis');
-      if (panel && !panel.classList.contains('hidden')) {
-          if (!panel.contains(event.target) && btn && !btn.contains(event.target)) {
-              panel.classList.add('hidden');
-          }
+      if (datos && datos.length > 0) {
+        datos.forEach(d => {
+          const opt = document.createElement('option');
+          opt.value = d.id;
+          opt.text  = d.nombre || (d.apellido ? `${d.apellido}, ${d.nombre}` : d.id);
+          select.appendChild(opt);
+        });
       }
+    }
+
   });
 </script>

@@ -1,0 +1,286 @@
+<script>
+  /**
+   * ========================================================================
+   * Inventario_Ficha_JS.html
+   * PROYECTO: Portal de Gestión - Defensoría del Pueblo
+   * RESPONSABILIDAD: Lógica de la vista Ficha de Activo.
+   *   - Carga y renderizado de los datos del activo.
+   *   - Dibujo del timeline de movimientos.
+   *   - Modal de registro de movimiento (traslado, consumo, baja, reparación).
+   *   - No conoce la lógica de Bandeja ni de Scan.
+   *   - Depende de: AppState_JS (INV_App.estadoActual, Memoria, USUARIO_ACTUAL),
+   *                 Core_JS (mostrarToast, cerrarModal).
+   * ========================================================================
+   */
+
+  Object.assign(window.INV_App, {
+
+    // =========================================================
+    // INICIALIZACIÓN DE LA FICHA
+    // =========================================================
+    iniciarFicha: function(idActivo) {
+      this.estadoActual.idQR = idActivo;
+
+      document.getElementById('ruta-actual').innerText = 'Ficha del Activo';
+      document.getElementById('content-inv-ficha').classList.add('hidden');
+      document.getElementById('loader-inv-ficha').classList.remove('hidden');
+
+      // Detener scanner si estaba activo
+      if (typeof INV_App.detenerCamaraEnVivo === 'function') INV_App.detenerCamaraEnVivo();
+
+      // Mover modal al body para evitar problemas de z-index
+      const modal = document.getElementById('modal-inv-movimiento');
+      if (modal && modal.parentElement !== document.body) document.body.appendChild(modal);
+
+      google.script.run
+        .withSuccessHandler(res => {
+          if (!res.success) {
+            Portal_Core.mostrarToast('error', 'Error', res.message);
+            this.volverAlScanOBandeja();
+            return;
+          }
+          this.estadoActual.activo = res.activo;
+          this.renderizarFicha(res.activo, res.historial);
+        })
+        .withFailureHandler(err => {
+          Portal_Core.mostrarToast('error', 'Error de Red', err.message);
+          this.volverAlScanOBandeja();
+        })
+        .obtenerFichaActivoBackend(idActivo);
+    },
+
+    volverAlScanOBandeja: function() {
+      cargarModulo('InventarioBandeja');
+    },
+
+    // =========================================================
+    // RENDERIZADO DE LA FICHA
+    // =========================================================
+    renderizarFicha: function(activo, historial) {
+      // Cabecera
+      document.getElementById('ficha-inv-id').innerText       = activo.activo_id.substring(0, 8).toUpperCase();
+      document.getElementById('ficha-inv-titulo').innerText   = `${activo.marca || ''} ${activo.modelo || ''}`.trim() || activo.categoria;
+      document.getElementById('ficha-inv-subtitulo').innerText = activo.categoria;
+
+      const badge = document.getElementById('ficha-inv-estado');
+      badge.innerText           = activo.estado;
+      badge.style.backgroundColor = activo.estado_color || 'var(--primary)';
+
+      // Ubicación y responsable
+      document.getElementById('ficha-inv-ubicacion').innerHTML =
+        activo.edificio
+          ? `${activo.edificio}<br>
+             <span style="font-size:0.8rem; color:var(--text-muted); font-weight:500;">
+               ${activo.piso || 'S/P'} &bull; ${activo.area_asignada}
+             </span>`
+          : `<span style="color:var(--warning);">Depósito Central</span>`;
+
+      document.getElementById('ficha-inv-responsable').innerText =
+        activo.agente_asignado !== 'Sin Asignar'
+          ? activo.agente_asignado
+          : activo.area_asignada !== 'Sin Área'
+            ? `Área: ${activo.area_asignada}`
+            : 'Sin Responsable';
+
+      // Campos condicionales: consumible vs. equipo fijo
+      const boxSerie  = document.getElementById('box-inv-serie');
+      const boxStock  = document.getElementById('box-inv-stock');
+      const btnFijo   = document.getElementById('inv-botones-fijo');
+      const btnInsumo = document.getElementById('inv-botones-insumo');
+
+      if (activo.es_consumible) {
+        boxSerie.classList.add('hidden');
+        boxStock.classList.remove('hidden');
+        document.getElementById('ficha-inv-stock').innerText = activo.stock_actual;
+        btnFijo.classList.add('hidden');
+        btnInsumo.classList.remove('hidden');
+      } else {
+        boxStock.classList.add('hidden');
+        boxSerie.classList.remove('hidden');
+        document.getElementById('ficha-inv-serie').innerHTML =
+          `${activo.nro_serie_imei || 'S/N'}<br>
+           <span style="font-size:0.8rem; color:var(--text-muted); font-weight:500;">
+             ID Adm: ${activo.id_patrimonial || 'S/D'}
+           </span>`;
+        btnInsumo.classList.add('hidden');
+        btnFijo.classList.remove('hidden');
+      }
+
+      this.dibujarTimeline(historial);
+
+      document.getElementById('loader-inv-ficha').classList.add('hidden');
+      document.getElementById('content-inv-ficha').classList.remove('hidden');
+    },
+
+    // =========================================================
+    // TIMELINE DE MOVIMIENTOS
+    // =========================================================
+    dibujarTimeline: function(historial) {
+      const box = document.getElementById('timeline-inv-movimientos');
+      if (!box) return;
+
+      if (!historial || historial.length === 0) {
+        box.innerHTML = `
+          <div style="text-align:center; padding:20px; color:var(--text-muted);">
+            <i class="fas fa-box-open fa-2x" style="opacity:0.3; margin-bottom:10px;"></i>
+            <p>Sin movimientos registrados.</p>
+          </div>`;
+        return;
+      }
+
+      box.innerHTML = historial.map(m => {
+        let icono = 'fa-exchange-alt';
+        let color = 'var(--primary)';
+
+        if (m.tipo_movimiento.includes('Alta'))       { icono = 'fa-plus-circle';  color = 'var(--success)'; }
+        if (m.tipo_movimiento.includes('Baja'))       { icono = 'fa-trash-alt';    color = 'var(--danger)';  }
+        if (m.tipo_movimiento.includes('Reparac'))    { icono = 'fa-tools';        color = 'var(--warning)'; }
+        if (m.tipo_movimiento.includes('Entrega') ||
+            m.tipo_movimiento.includes('Consumo'))    { icono = 'fa-box-open';     color = 'var(--warning)'; }
+
+        const detallesHTML = [
+          m.edificio_destino  ? `<span class="tm-badge-route"><i class="fas fa-building"></i> ${m.edificio_destino}</span>`  : '',
+          m.agente_destino    ? `<span class="tm-badge-route"><i class="fas fa-user-tie"></i> ${m.agente_destino}</span>`    : '',
+          m.cantidad > 1      ? `<span class="tm-badge-route"><i class="fas fa-cubes"></i> ×${m.cantidad}</span>`            : ''
+        ].filter(Boolean).join('');
+
+        return `
+          <div class="tl-item">
+            <div class="tl-dot" style="background:${color};"></div>
+            <div class="tl-content">
+              <div style="display:flex; justify-content:space-between; align-items:center;
+                          margin-bottom:8px;">
+                <span style="font-size:0.8rem; font-weight:700; color:${color};">
+                  <i class="fas ${icono}"></i> ${m.tipo_movimiento}
+                </span>
+                <span style="font-size:0.7rem; color:var(--text-muted); font-weight:600;">
+                  ${m.fecha_movimiento ? m.fecha_movimiento.split('T')[0] : ''}
+                </span>
+              </div>
+              ${detallesHTML
+                ? `<div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px;">
+                     ${detallesHTML}
+                   </div>`
+                : ''}
+              <div style="font-size:0.85rem; color:var(--text-main); margin-top:6px; line-height:1.5;">
+                ${m.observaciones || '<span style="opacity:0.5; font-style:italic;">Sin observaciones</span>'}
+              </div>
+              <div style="font-size:0.7rem; color:var(--text-muted); margin-top:10px; font-weight:600;">
+                <i class="fas fa-pencil-alt"></i> Registrado por: ${m.registrado_por}
+              </div>
+            </div>
+          </div>`;
+      }).join('');
+    },
+
+    // =========================================================
+    // MODAL DE MOVIMIENTO
+    // =========================================================
+    abrirModalMovimiento: function(accion) {
+      // Reset del modal
+      document.getElementById('modal-inv-obs').value = '';
+      document.getElementById('modal-inv-cantidad').value = 1;
+
+      ['modal-inv-box-cantidad',
+       'modal-inv-box-destino',
+       'modal-inv-box-responsable',
+       'modal-inv-box-baja'].forEach(id => {
+        document.getElementById(id).classList.add('hidden');
+      });
+
+      const title      = document.getElementById('modal-inv-title');
+      const tipoHidden = document.getElementById('modal-inv-tipo');
+
+      if (accion === 'Traslado') {
+        title.innerHTML   = '<i class="fas fa-people-carry" style="color:var(--primary)"></i> Asignar / Trasladar';
+        tipoHidden.value  = '4';
+        document.getElementById('modal-inv-box-destino').classList.remove('hidden');
+        document.getElementById('modal-inv-box-responsable').classList.remove('hidden');
+        this._cargarSelectoresMovimiento();
+
+      } else if (accion === 'Consumo') {
+        title.innerHTML  = '<i class="fas fa-box-open" style="color:var(--warning)"></i> Descontar Insumo';
+        tipoHidden.value = '5';
+        document.getElementById('modal-inv-box-cantidad').classList.remove('hidden');
+        document.getElementById('modal-inv-box-responsable').classList.remove('hidden');
+        document.getElementById('modal-inv-cantidad').max = this.estadoActual.activo.stock_actual;
+        this._cargarSelectoresMovimiento(true);
+
+      } else if (accion === 'Baja') {
+        title.innerHTML  = '<i class="fas fa-trash-alt" style="color:var(--danger)"></i> Dar de Baja';
+        tipoHidden.value = '6';
+        document.getElementById('modal-inv-box-baja').classList.remove('hidden');
+
+      } else if (accion === 'Reparacion') {
+        title.innerHTML  = '<i class="fas fa-tools" style="color:var(--warning)"></i> Enviar a Reparación';
+        tipoHidden.value = '4';
+      }
+
+      document.getElementById('modal-inv-movimiento').classList.remove('hidden');
+    },
+
+    guardarMovimiento: function() {
+      const tipoId = document.getElementById('modal-inv-tipo').value;
+      const obs    = document.getElementById('modal-inv-obs').value.trim();
+
+      const payload = {
+        activo_id:           this.estadoActual.idQR,
+        tipo_movimiento_id:  parseInt(tipoId),
+        agente_registro_id:  window.USUARIO_ACTUAL.idAgente,
+        observaciones:       obs
+      };
+
+      if (tipoId === '4' || tipoId === '2') {
+        payload.edificio_destino_id = parseInt(document.getElementById('modal-inv-edificio').value);
+        payload.agente_destino_id   = document.getElementById('modal-inv-responsable').value;
+      } else if (tipoId === '5') {
+        payload.cantidad            = parseInt(document.getElementById('modal-inv-cantidad').value);
+        payload.agente_destino_id   = document.getElementById('modal-inv-responsable').value;
+      } else if (tipoId === '6') {
+        payload.motivo_baja = document.getElementById('modal-inv-motivo-baja').value;
+        if (!payload.motivo_baja) {
+          return Portal_Core.mostrarToast('warning', 'Dato Requerido', 'Indique el motivo de la baja.');
+        }
+      }
+
+      const btn = document.getElementById('btn-guardar-mov-inv');
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fas fa-spinner spinner"></i> Registrando...';
+
+      google.script.run
+        .withSuccessHandler(res => {
+          btn.disabled = false;
+          btn.innerHTML = '<i class="fas fa-save"></i> Confirmar';
+          if (res.success) {
+            Portal_Core.cerrarModal('modal-inv-movimiento');
+            Portal_Core.mostrarToast('success', 'Guardado', 'Movimiento registrado correctamente.');
+            this.iniciarFicha(this.estadoActual.idQR);
+          } else {
+            Portal_Core.mostrarToast('error', 'Error DB', res.message);
+          }
+        })
+        .registrarMovimientoInventarioBackend(payload);
+    },
+
+    // =========================================================
+    // PRIVADO: cargar selects del modal desde cache
+    // =========================================================
+    _cargarSelectoresMovimiento: function(soloAgentes = false) {
+      const cache = Memoria.leer('diccionariosINV');
+      if (!cache) return;
+      if (!soloAgentes) {
+        const elEdif = document.getElementById('modal-inv-edificio');
+        if (elEdif) {
+          elEdif.innerHTML = '<option value="">Seleccione edificio...</option>' +
+            (cache.edificios || []).map(e => `<option value="${e.id}">${e.nombre}</option>`).join('');
+        }
+      }
+      const elResp = document.getElementById('modal-inv-responsable');
+      if (elResp) {
+        elResp.innerHTML = '<option value="">Seleccione agente...</option>' +
+          (cache.agentes || []).map(a => `<option value="${a.id}">${a.apellido}, ${a.nombre}</option>`).join('');
+      }
+    }
+
+  });
+</script>

@@ -1,0 +1,100 @@
+<script>
+  /**
+   * ========================================================================
+   * ATC_Interacciones_JS.html
+   * PROYECTO: Portal de Gestión - Defensoría del Pueblo
+   * RESPONSABILIDAD: Modal de interacciones del caso.
+   *   - Abrir modal en modo crear o editar.
+   *   - Guardar / actualizar interacción contra el backend.
+   *   - Depende de: AppState_JS (ATC_App.estadoDetalle, USUARIO_ACTUAL),
+   *                 Core_JS (mostrarToast, cerrarModal),
+   *                 ATC_Detalle_JS (iniciarDetalle),
+   *                 ATC_Bandeja_JS (checkNotificaciones).
+   * ========================================================================
+   */
+
+  Object.assign(window.ATC_App, {
+
+    // =========================================================
+    // ABRIR MODAL (crear o editar)
+    // =========================================================
+    abrirModalInteraccion: function(dataEncoded = null) {
+      const modalText  = document.getElementById('modal-int-texto');
+      const modalId    = document.getElementById('modal-int-id');
+      const btnGuardar = document.getElementById('btn-guardar-int');
+      const modalTitle = document.getElementById('modal-int-title');
+
+      if (dataEncoded) {
+        const data       = JSON.parse(decodeURIComponent(dataEncoded));
+        modalId.value    = data.interaccion_id;
+        modalText.value  = data.observacion;
+        modalTitle.innerText         = 'Editar Interacción';
+        btnGuardar.innerHTML         = '<i class="fas fa-save"></i> Actualizar';
+      } else {
+        modalId.value    = '';
+        modalText.value  = '';
+        modalTitle.innerText         = 'Nueva Interacción';
+        btnGuardar.innerHTML         = '<i class="fas fa-save"></i> Guardar';
+      }
+
+      btnGuardar.disabled = false;
+      document.getElementById('modal-interaccion').classList.remove('hidden');
+      setTimeout(() => modalText.focus(), 100);
+    },
+
+    // =========================================================
+    // GUARDAR / ACTUALIZAR
+    // =========================================================
+    guardarInteraccion: function() {
+      const texto       = document.getElementById('modal-int-texto').value.trim();
+      const idExistente = document.getElementById('modal-int-id').value;
+
+      if (!texto) return Portal_Core.mostrarToast('warning', 'Validación', 'Debe escribir un comentario.');
+
+      const btn = document.getElementById('btn-guardar-int');
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fas fa-spinner spinner"></i> Procesando...';
+
+      const payload = {
+        recepcion_id:      this.estadoDetalle.idCaso,
+        agente_id:         window.USUARIO_ACTUAL.idAgente,
+        es_mensaje_sistema: false,
+        observacion:       texto
+      };
+      if (idExistente) payload.id = idExistente;
+
+      google.script.run
+        .withSuccessHandler(res => {
+          if (res.success) {
+            Portal_Core.mostrarToast(
+              'success', 'Éxito',
+              idExistente ? 'Interacción actualizada.' : 'Interacción registrada.'
+            );
+            Portal_Core.cerrarModal('modal-interaccion');
+            this.checkNotificaciones();
+            this.iniciarDetalle(this.estadoDetalle.idCaso);
+          } else {
+            Portal_Core.mostrarToast('error', 'Error SQL', res.message);
+            btn.disabled  = false;
+            btn.innerHTML = idExistente
+              ? '<i class="fas fa-save"></i> Actualizar'
+              : '<i class="fas fa-save"></i> Guardar';
+          }
+        })
+        .withFailureHandler(err => {
+          Portal_Core.mostrarToast('error', 'Fallo de Red', err.message);
+          btn.disabled  = false;
+          btn.innerHTML = '<i class="fas fa-save"></i> Guardar';
+        })
+        .guardarInteraccionBackend(payload);
+    },
+
+    // =========================================================
+    // CERRAR MODAL
+    // =========================================================
+    cerrarModalInteraccion: function() {
+      Portal_Core.cerrarModal('modal-interaccion');
+    }
+
+  });
+</script>

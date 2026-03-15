@@ -1,0 +1,259 @@
+<script>
+  /**
+   * ========================================================================
+   * Inventario_Scan_JS.html
+   * PROYECTO: Portal de Gestión - Defensoría del Pueblo
+   * RESPONSABILIDAD: Lógica del escáner QR del módulo Inventario.
+   *   - Inicialización de la vista de scan.
+   *   - Apertura del popup externo con cámara (workaround iframe GAS).
+   *   - Listener de mensajes postMessage desde el popup.
+   *   - Entrada manual de código.
+   *   - Limpieza de recursos (popup, stream, listeners).
+   *   - No conoce la lógica de Bandeja ni de Ficha.
+   *   - Depende de: AppState_JS (INV_App.estadoActual),
+   *                 Core_JS (mostrarToast, reproducirSonido).
+   * ========================================================================
+   */
+
+  Object.assign(window.INV_App, {
+
+    // =========================================================
+    // ESTADO INTERNO DEL SCANNER
+    // =========================================================
+    _popupQR:          null,
+    _listenerMensaje:  null,
+    _stream:           null,
+
+    // =========================================================
+    // INICIALIZACIÓN DE LA VISTA SCAN
+    // =========================================================
+    iniciarScan: function() {
+      document.getElementById('ruta-actual').innerText = 'Escanear Activo';
+      this.detenerCamaraEnVivo();
+    },
+
+    // =========================================================
+    // ENTRADA MANUAL DE CÓDIGO
+    // =========================================================
+    procesarCodigoManual: function() {
+      const input = document.getElementById('manual-qr-input');
+      const id    = input ? input.value.trim().toUpperCase() : '';
+      if (!id) return Portal_Core.mostrarToast('warning', 'Dato Requerido', 'Ingresá un código válido.');
+      cargarModulo('InventarioFicha', id);
+    },
+
+    // =========================================================
+    // APERTURA DEL POPUP DE CÁMARA
+    // Contexto: GAS sirve el portal en un iframe con Feature-Policy
+    // que bloquea getUserMedia. La solución es abrir un popup
+    // top-level donde el permiso de cámara sí funciona.
+    // El popup lee el QR y devuelve el resultado via postMessage.
+    // =========================================================
+    abrirCamaraEnVivo: function() {
+      const inputEl = document.getElementById('manual-qr-input');
+      if (inputEl) inputEl.value = '';
+
+      this.detenerCamaraEnVivo();
+
+      const htmlPopup = `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <title>Escanear QR</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+           background: #0f172a; color: #f1f5f9; display: flex; flex-direction: column;
+           align-items: center; justify-content: center; min-height: 100vh; padding: 20px; }
+    h2  { font-size: 1.2rem; font-weight: 700; margin-bottom: 6px; }
+    p   { font-size: 0.85rem; color: #94a3b8; margin-bottom: 20px; text-align: center; }
+    #visor { position: relative; width: 100%; max-width: 340px; border-radius: 16px;
+             overflow: hidden; background: #000; aspect-ratio: 1; }
+    video  { width: 100%; height: 100%; object-fit: cover; display: block; }
+    canvas { display: none; }
+    .mira  { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+             width: 60%; aspect-ratio: 1; border: 3px solid #818cf8; border-radius: 12px;
+             box-shadow: 0 0 0 2000px rgba(0,0,0,0.45); pointer-events: none; }
+    .esquina { position: absolute; width: 20px; height: 20px; border-color: #6366f1; border-style: solid; }
+    .esquina.tl { top: 0; left: 0;  border-width: 3px 0 0 3px; border-radius: 4px 0 0 0; }
+    .esquina.tr { top: 0; right: 0; border-width: 3px 3px 0 0; border-radius: 0 4px 0 0; }
+    .esquina.bl { bottom: 0; left: 0;  border-width: 0 0 3px 3px; border-radius: 0 0 0 4px; }
+    .esquina.br { bottom: 0; right: 0; border-width: 0 3px 3px 0; border-radius: 0 0 4px 0; }
+    #estado { margin-top: 16px; font-size: 0.8rem; color: #64748b; min-height: 20px; text-align: center; }
+    #estado.ok  { color: #4ade80; font-weight: 700; }
+    #estado.err { color: #f87171; }
+    button { margin-top: 20px; padding: 10px 28px; background: #4f46e5; color: white;
+             border: none; border-radius: 10px; font-size: 0.9rem; font-weight: 600; cursor: pointer; }
+    button:hover { background: #4338ca; }
+  </style>
+</head>
+<body>
+  <h2>Escanear Código QR</h2>
+  <p>Enfocá el código QR del activo.<br>La ventana se cerrará automáticamente.</p>
+  <div id="visor">
+    <video id="v" autoplay muted playsinline></video>
+    <canvas id="c"></canvas>
+    <div class="mira">
+      <div class="esquina tl"></div><div class="esquina tr"></div>
+      <div class="esquina bl"></div><div class="esquina br"></div>
+    </div>
+  </div>
+  <div id="estado">Iniciando cámara...</div>
+  <button onclick="window.close()">Cancelar</button>
+
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"><\/script>
+  <script>
+    const video  = document.getElementById('v');
+    const canvas = document.getElementById('c');
+    const estado = document.getElementById('estado');
+    let rafId = null, streamActivo = null, detectando = true;
+
+    async function iniciar() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 1280 } },
+          audio: false
+        });
+        streamActivo = stream;
+        video.srcObject = stream;
+        await video.play();
+        estado.textContent = 'Buscando código QR...';
+
+        const usarNativa = 'BarcodeDetector' in window;
+        const detector   = usarNativa ? new BarcodeDetector({ formats: ['qr_code'] }) : null;
+        const ctx        = canvas.getContext('2d');
+        let ultimoFrame  = 0;
+
+        const scan = async (ts) => {
+          if (!detectando) return;
+          if (ts - ultimoFrame < 100) { rafId = requestAnimationFrame(scan); return; }
+          ultimoFrame = ts;
+          if (video.readyState < video.HAVE_ENOUGH_DATA) { rafId = requestAnimationFrame(scan); return; }
+
+          canvas.width  = video.videoWidth;
+          canvas.height = video.videoHeight;
+          ctx.drawImage(video, 0, 0);
+
+          let resultado = null;
+          try {
+            if (usarNativa) {
+              const lista = await detector.detect(video);
+              if (lista.length > 0) resultado = lista[0].rawValue;
+            } else {
+              const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+              const code    = jsQR(imgData.data, imgData.width, imgData.height, { inversionAttempts: 'dontInvert' });
+              if (code) resultado = code.data;
+            }
+          } catch(e) {}
+
+          if (resultado) {
+            detectando = false;
+            cancelAnimationFrame(rafId);
+            streamActivo.getTracks().forEach(t => t.stop());
+            estado.textContent = 'Código leído: ' + resultado;
+            estado.className   = 'ok';
+            if (window.opener && !window.opener.closed) {
+              window.opener.postMessage({ tipo: 'QR_RESULT', valor: resultado.trim().toUpperCase() }, '*');
+            }
+            setTimeout(() => window.close(), 800);
+            return;
+          }
+          rafId = requestAnimationFrame(scan);
+        };
+
+        rafId = requestAnimationFrame(scan);
+
+      } catch(err) {
+        const msg = err.name === 'NotAllowedError'
+          ? 'Permiso de cámara denegado. Revisá la configuración del navegador.'
+          : 'Error: ' + err.message;
+        estado.textContent = msg;
+        estado.className   = 'err';
+      }
+    }
+
+    window.addEventListener('beforeunload', () => {
+      detectando = false;
+      if (rafId) cancelAnimationFrame(rafId);
+      if (streamActivo) streamActivo.getTracks().forEach(t => t.stop());
+    });
+
+    iniciar();
+  <\/script>
+</body>
+</html>`;
+
+      const ancho = Math.min(420, screen.width);
+      const alto  = Math.min(620, screen.height);
+      const left  = Math.round((screen.width  - ancho) / 2);
+      const top   = Math.round((screen.height - alto)  / 2);
+
+      this._popupQR = window.open(
+        'about:blank',
+        'QRScanner',
+        `width=${ancho},height=${alto},left=${left},top=${top},` +
+        `resizable=yes,scrollbars=no,toolbar=no,menubar=no,location=no,status=no`
+      );
+
+      if (!this._popupQR) {
+        Portal_Core.mostrarToast(
+          'warning',
+          'Popup Bloqueado',
+          'El navegador bloqueó la ventana emergente. Permitila para este sitio en la barra de direcciones.'
+        );
+        return;
+      }
+
+      this._popupQR.document.open();
+      this._popupQR.document.write(htmlPopup);
+      this._popupQR.document.close();
+
+      // Listener: recibir el QR desde el popup
+      this._listenerMensaje = (event) => {
+        if (!event.data || event.data.tipo !== 'QR_RESULT') return;
+
+        const inputEl = document.getElementById('manual-qr-input');
+        if (inputEl) {
+          inputEl.value = event.data.valor;
+          inputEl.style.backgroundColor = '#fef08a';
+          setTimeout(() => inputEl.style.backgroundColor = '', 1200);
+        }
+
+        Portal_Core.reproducirSonido('success');
+        Portal_Core.mostrarToast('success', 'QR Leído', 'Código: ' + event.data.valor);
+
+        window.removeEventListener('message', this._listenerMensaje);
+        this._listenerMensaje = null;
+        this._popupQR = null;
+      };
+
+      window.addEventListener('message', this._listenerMensaje);
+    },
+
+    // =========================================================
+    // LIMPIEZA DE RECURSOS DEL SCANNER
+    // Llamado al salir de la vista Scan o al entrar a Ficha/Bandeja.
+    // =========================================================
+    detenerCamaraEnVivo: function() {
+      if (this._popupQR && !this._popupQR.closed) this._popupQR.close();
+      this._popupQR = null;
+
+      if (this._listenerMensaje) {
+        window.removeEventListener('message', this._listenerMensaje);
+        this._listenerMensaje = null;
+      }
+
+      if (this._stream) {
+        this._stream.getTracks().forEach(t => t.stop());
+        this._stream = null;
+      }
+
+      const promptCard = document.getElementById('scan-prompt-card');
+      const liveCard   = document.getElementById('live-camera-card');
+      if (promptCard) promptCard.classList.remove('hidden');
+      if (liveCard)   liveCard.classList.add('hidden');
+    }
+
+  });
+</script>

@@ -1,0 +1,94 @@
+<script>
+  /**
+   * ========================================================================
+   * AppState_JS.html
+   * PROYECTO: Portal de Gestión - Defensoría del Pueblo
+   * RESPONSABILIDAD: Único dueño del estado global de la aplicación.
+   *   - Define y expone todos los objetos de estado.
+   *   - No contiene lógica de negocio, UI ni llamadas a GAS.
+   *   - Debe ser el PRIMER script cargado en Layout_Main.html.
+   * ========================================================================
+   */
+
+  // =========================================================
+  // UTILIDAD DE PERSISTENCIA LOCAL
+  // =========================================================
+  const Memoria = {
+    leer:   (k)    => { try { return JSON.parse(localStorage.getItem(k)); } catch(e) { return null; } },
+    guardar:(k, v) => localStorage.setItem(k, JSON.stringify(v)),
+    borrar: (k)    => localStorage.removeItem(k)
+  };
+
+  // =========================================================
+  // SESIÓN DEL USUARIO
+  // =========================================================
+  window.USUARIO_ACTUAL = null;
+
+  // =========================================================
+  // MAPA DE RUTAS → CONTENEDORES HTML
+  // Agrega aquí cada nueva vista que se incorpore al portal.
+  // =========================================================
+  window.MAPA_CONTENEDORES = {
+    'Login':                'view-Login',
+    'PortalHome':           'view-PortalHome',
+    'MisCasos':             'view-Bandeja',
+    'MiArea':               'view-Bandeja',
+    'TodosLosCasos':        'view-Bandeja',
+    'DetalleCaso':          'view-DetalleCaso',
+    'BuscarCiudadano':      'view-BuscarCiudadano',
+    'NuevaRecepcionPaso2':  'view-NuevaRecepcionPaso2',
+    'FichaCiudadano':       'view-FichaCiudadano',
+    'InventarioBandeja':    'view-InventarioBandeja',
+    'InventarioScan':       'view-InventarioScan',
+    'InventarioFicha':      'view-InventarioFicha'
+  };
+
+  // =========================================================
+  // ESTADO: MÓDULO ATC (Atención al Ciudadano)
+  // =========================================================
+  window.ATC_App = window.ATC_App || {};
+
+  window.ATC_App.estadoBandeja = {
+    modulo:          '',
+    datos:           [],
+    pagina:          1,
+    totalRegistros:  0,
+    itemsPorPagina:  20
+  };
+
+  window.ATC_App.estadoDetalle = {
+    idCaso:           null,
+    idEstado:         null,
+    categoriaActual:  null,
+    idCiudadano:      null
+  };
+
+  window.ATC_App.estadoNuevaRecepcion = {
+    ciudadanoActual:        null,
+    casosCiudadanoActual:   [],
+    idCasoDuplicadoCache:   null,
+    reprogramado:           false
+  };
+
+  window.ATC_App.estadoFicha = {
+    idCasoOrigen: null,
+    ciudadano:    null,
+    casos:        []
+  };
+
+  window.ATC_App.temporizadores = {
+    bandeja: null
+  };
+
+  // =========================================================
+  // ESTADO: MÓDULO INVENTARIO
+  // =========================================================
+  window.INV_App = window.INV_App || {};
+
+  window.INV_App.estadoBandeja = {
+    modulo:  'Equipos',
+    pagina:  1,
+    filtros: {}
+  };
+
+</script>

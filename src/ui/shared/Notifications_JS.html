@@ -1,0 +1,176 @@
+<script>
+  /**
+   * ========================================================================
+   * Notifications_JS.html
+   * PROYECTO: Portal de Gestión - Defensoría del Pueblo
+   * RESPONSABILIDAD: Sistema completo de notificaciones en tiempo real.
+   *   - Estado de notificaciones, badge, panel y motor de polling.
+   *   - Depende de: AppState_JS (window.USUARIO_ACTUAL),
+   *                 Core_JS (Portal_Core.mostrarToast, reproducirSonido).
+   * ========================================================================
+   */
+
+  window.Portal_Core = window.Portal_Core || {};
+
+  Object.assign(window.Portal_Core, {
+
+    // =========================================================
+    // ESTADO INTERNO DE NOTIFICACIONES
+    // =========================================================
+    estadoNotificaciones:    [],
+    estadoTotalNotis:        0,
+    temporizadorNotificaciones: null,
+
+    // =========================================================
+    // INICIALIZACIÓN (llamada desde Session_JS al arrancar)
+    // =========================================================
+    iniciarNotificaciones: function(lista, total) {
+      this.estadoNotificaciones = lista || [];
+      this.estadoTotalNotis     = total || 0;
+      this.renderizarBadge();
+      this.arrancarMotorFondo();
+    },
+
+    // =========================================================
+    // BADGE (contador en la campana)
+    // =========================================================
+    renderizarBadge: function() {
+      const badge = document.getElementById('badge-notificaciones');
+      if (!badge) return;
+      if (this.estadoTotalNotis > 0) {
+        badge.innerText = this.estadoTotalNotis > 99 ? '99+' : this.estadoTotalNotis;
+        badge.classList.remove('hidden');
+      } else {
+        badge.classList.add('hidden');
+      }
+    },
+
+    // =========================================================
+    // MOTOR DE POLLING (cada 30 segundos)
+    // =========================================================
+    arrancarMotorFondo: function() {
+      if (this.temporizadorNotificaciones) clearInterval(this.temporizadorNotificaciones);
+
+      this.temporizadorNotificaciones = setInterval(() => {
+        if (!window.USUARIO_ACTUAL) return;
+
+        google.script.run
+          .withSuccessHandler(res => {
+            if (!res.success) return;
+
+            const totalAnterior       = this.estadoTotalNotis;
+            this.estadoNotificaciones = res.lista;
+            this.estadoTotalNotis     = res.total;
+            this.renderizarBadge();
+
+            if (res.total > totalAnterior) {
+              this.mostrarToast(
+                'info',
+                'Actualización de Bandeja',
+                `Tenés ${res.total} casos que requieren atención.`,
+                8000,
+                false
+              );
+              this.reproducirSonido('campana');
+            }
+
+            const panel = document.getElementById('panel-notificaciones');
+            if (panel && !panel.classList.contains('hidden')) {
+              this.renderizarPanelNotificaciones();
+            }
+          })
+          .obtenerNotificacionesBackend(
+            window.USUARIO_ACTUAL.idAgente,
+            window.USUARIO_ACTUAL.idArea
+          );
+
+      }, 30000);
+    },
+
+    // =========================================================
+    // PANEL DESPLEGABLE
+    // =========================================================
+    togglePanelNotificaciones: function() {
+      const panel = document.getElementById('panel-notificaciones');
+      if (!panel) return;
+      panel.classList.toggle('hidden');
+      if (!panel.classList.contains('hidden')) this.renderizarPanelNotificaciones();
+    },
+
+    renderizarPanelNotificaciones: function() {
+      const body  = document.getElementById('panel-notis-body');
+      const count = document.getElementById('panel-notis-count');
+      if (!body || !count) return;
+
+      count.innerText = `${this.estadoTotalNotis} PENDIENTES`;
+
+      if (this.estadoNotificaciones.length === 0) {
+        body.innerHTML = `
+          <div style="padding: 40px 20px; text-align: center; color: var(--text-muted);">
+            <i class="far fa-check-circle fa-3x" style="margin-bottom: 15px; color: var(--success); opacity: 0.5;"></i>
+            <p style="font-size: 0.95rem; font-weight: 600; color: var(--text-main);">¡Estás al día!</p>
+            <p style="font-size: 0.8rem;">No tenés tareas urgentes esperando.</p>
+          </div>`;
+        return;
+      }
+
+      body.innerHTML = this.estadoNotificaciones.map(n => {
+        const esPersonal = n.tipo === 'personal';
+        const icono  = esPersonal ? 'fa-user-tag'    : 'fa-users';
+        const color  = esPersonal ? 'var(--warning)'  : 'var(--primary)';
+        const fondo  = esPersonal ? 'var(--warning-bg)' : 'var(--primary-light)';
+        const fecha  = n.fecha ? n.fecha.split(' ')[0] : '';
+
+        return `
+          <div onclick="Portal_Core.togglePanelNotificaciones(); cargarModulo('DetalleCaso', '${n.id}')"
+               style="padding:15px 20px; border-bottom:1px solid var(--border-soft); cursor:pointer;
+                      transition:0.2s; display:flex; gap:15px; align-items:flex-start;"
+               onmouseover="this.style.backgroundColor='var(--bg-app)'"
+               onmouseout="this.style.backgroundColor='white'">
+            <div style="width:38px; height:38px; border-radius:10px; background:${fondo};
+                        color:${color}; display:flex; align-items:center; justify-content:center;
+                        flex-shrink:0; font-size:1rem;">
+              <i class="fas ${icono}"></i>
+            </div>
+            <div>
+              <div style="font-size:0.85rem; font-weight:700; color:var(--text-main); margin-bottom:4px;">
+                ${n.titulo}
+                <span style="font-family:monospace; font-size:0.75rem; color:var(--text-muted);
+                             font-weight:500; margin-left:4px;">
+                  #${n.id.substring(0, 6).toUpperCase()}
+                </span>
+              </div>
+              <div style="font-size:0.8rem; color:var(--text-muted); line-height:1.3; font-weight:500;">
+                ${n.mensaje}
+              </div>
+              <div style="font-size:0.7rem; color:var(--text-light); margin-top:6px; font-weight:600;">
+                <i class="far fa-clock"></i> ${fecha}
+              </div>
+            </div>
+          </div>`;
+      }).join('');
+
+      if (this.estadoTotalNotis > this.estadoNotificaciones.length) {
+        body.innerHTML += `
+          <div style="padding:12px; text-align:center; font-size:0.75rem;
+                      color:var(--text-muted); font-style:italic; background:white;">
+            Mostrando recientes...
+          </div>`;
+      }
+    }
+
+  });
+
+  // =========================================================
+  // LISTENER GLOBAL: cerrar panel al hacer clic afuera
+  // =========================================================
+  document.addEventListener('click', function(event) {
+    const panel = document.getElementById('panel-notificaciones');
+    const btnCampana = document.getElementById('btn-campana-notis');
+    if (!panel || panel.classList.contains('hidden')) return;
+    if (!panel.contains(event.target) && btnCampana && !btnCampana.contains(event.target)) {
+      panel.classList.add('hidden');
+    }
+  });
+
+</script>

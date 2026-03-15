@@ -1,0 +1,329 @@
+<script>
+  /**
+   * ========================================================================
+   * ATC_Bandeja_JS.html
+   * PROYECTO: Portal de Gestión - Defensoría del Pueblo
+   * RESPONSABILIDAD: Lógica de la bandeja de casos (MisCasos, MiArea,
+   *   TodosLosCasos). Filtros, paginación, renderizado y refresco silencioso.
+   *   - No conoce la lógica de Detalle ni de Recepción.
+   *   - Depende de: AppState_JS (ATC_App.estadoBandeja, Memoria, USUARIO_ACTUAL),
+   *                 Core_JS (mostrarToast),
+   *                 Notifications_JS (iniciarNotificaciones).
+   * ========================================================================
+   */
+
+  Object.assign(window.ATC_App, {
+
+    timeoutBuscador: null,
+
+    // =========================================================
+    // INICIALIZACIÓN
+    // =========================================================
+    iniciarBandeja: function(modulo) {
+      this.estadoBandeja.modulo            = modulo;
+      this.estadoBandeja.pagina            = 1;
+      this.estadoBandeja.terminoBusqueda   = '';
+
+      const titulos = {
+        MisCasos:      'Mis Casos',
+        MiArea:        'Mi Área',
+        TodosLosCasos: 'Histórico General'
+      };
+
+      document.getElementById('bandeja-titulo').innerText = titulos[modulo] || 'Casos';
+      document.getElementById('ruta-actual').innerText    = titulos[modulo] || 'Bandeja';
+
+      const inputBuscador = document.getElementById('input-buscador');
+      if (inputBuscador) {
+        inputBuscador.value       = '';
+        inputBuscador.placeholder = 'Buscar DNI, Nombre, N° Caso o N° Expediente...';
+      }
+
+      // Lazy loading de diccionarios
+      const cacheATC    = Memoria.leer('diccionariosATC');
+      const cacheGlobal = Memoria.leer('diccionariosGlobales');
+
+      if (cacheATC && cacheGlobal) {
+        this.configurarFiltrosAvanzados(modulo, cacheATC, cacheGlobal);
+        this.cargarDatosBandeja();
+      } else {
+        this._mostrarSpinnerBandeja('Preparando entorno de atención ciudadana...');
+        google.script.run
+          .withSuccessHandler(res => {
+            if (res && res.success) {
+              Memoria.guardar('diccionariosATC', res.data);
+              this.configurarFiltrosAvanzados(modulo, res.data, cacheGlobal);
+              this.cargarDatosBandeja();
+            } else {
+              Portal_Core.mostrarToast('error', 'Fallo de Sincronización', res.message);
+            }
+          })
+          .withFailureHandler(err => Portal_Core.mostrarToast('error', 'Fallo de Red', err.message))
+          .obtenerDiccionariosATCBackend();
+      }
+    },
+
+    // =========================================================
+    // CONFIGURACIÓN DE FILTROS AVANZADOS
+    // =========================================================
+    configurarFiltrosAvanzados: function(modulo, cacheATC, cacheGlobal) {
+      ['filtro-estado','filtro-categoria','filtro-desde',
+       'filtro-hasta','filtro-agente','filtro-area'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+      });
+
+      if (cacheATC && cacheATC.categorias) {
+        document.getElementById('filtro-categoria').innerHTML =
+          '<option value="">Todas las Categorías</option>' +
+          cacheATC.categorias.map(c => `<option value="${c.nombre}">${c.nombre}</option>`).join('');
+      }
+
+      if (cacheGlobal) {
+        if (cacheGlobal.agentes) {
+          document.getElementById('filtro-agente').innerHTML =
+            '<option value="">Todos los Agentes</option>' +
+            cacheGlobal.agentes.map(a => `<option value="${a.id}">${a.apellido}, ${a.nombre}</option>`).join('');
+        }
+        if (cacheGlobal.areas) {
+          document.getElementById('filtro-area').innerHTML =
+            '<option value="">Todas las Áreas</option>' +
+            cacheGlobal.areas.map(a => `<option value="${a.id}">${a.nombre}</option>`).join('');
+        }
+      }
+
+      const estados = modulo === 'MisCasos'
+        ? ['ASIGNADO', 'EN PROCESO', 'FINALIZADO']
+        : ['PENDIENTE', 'ASIGNADO', 'EN PROCESO', 'DERIVADO', 'FINALIZADO'];
+
+      document.getElementById('filtro-estado').innerHTML =
+        '<option value="">Todos los Estados</option>' +
+        estados.map(e => `<option value="${e}">${e}</option>`).join('');
+
+      // Visibilidad contextual de filtros
+      const boxAgente = document.getElementById('box-filtro-agente');
+      const boxArea   = document.getElementById('box-filtro-area');
+      if (boxAgente) boxAgente.classList.toggle('hidden', modulo === 'MisCasos');
+      if (boxArea)   boxArea.classList.toggle('hidden',   modulo !== 'TodosLosCasos');
+    },
+
+    limpiarFiltrosAvanzados: function() {
+      ['filtro-estado','filtro-categoria','filtro-desde',
+       'filtro-hasta','filtro-agente','filtro-area'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+      });
+      this.filtrarBandejaAvanzada();
+    },
+
+    filtrarBandejaAvanzada: function() {
+      this.estadoBandeja.pagina = 1;
+      this.cargarDatosBandeja();
+    },
+
+    filtrarBandejaDebounced: function() {
+      clearTimeout(this.timeoutBuscador);
+      this.timeoutBuscador = setTimeout(() => {
+        this.estadoBandeja.terminoBusqueda = document.getElementById('input-buscador').value.trim();
+        this.estadoBandeja.pagina          = 1;
+        this.cargarDatosBandeja();
+      }, 500);
+    },
+
+    obtenerPaqueteFiltros: function() {
+      const mod = this.estadoBandeja.modulo;
+      const g   = (id) => document.getElementById(id) ? document.getElementById(id).value : '';
+      return {
+        estado:     g('filtro-estado'),
+        categoria:  g('filtro-categoria'),
+        fechaDesde: g('filtro-desde'),
+        fechaHasta: g('filtro-hasta'),
+        agenteId:   (mod === 'MiArea' || mod === 'TodosLosCasos') ? g('filtro-agente') : '',
+        areaId:     (mod === 'TodosLosCasos') ? g('filtro-area') : ''
+      };
+    },
+
+    // =========================================================
+    // CARGA DE DATOS
+    // =========================================================
+    cargarDatosBandeja: function() {
+      const contexto  = this._contextoFiltro();
+      const filtrosAv = this.obtenerPaqueteFiltros();
+
+      this._mostrarSpinnerBandeja('Aplicando filtros y buscando...');
+
+      google.script.run
+        .withSuccessHandler(res => {
+          if (!res.success) {
+            this._mostrarErrorBandeja(res.error || res.message);
+            return;
+          }
+          this.estadoBandeja.datos           = res.casos;
+          this.estadoBandeja.totalRegistros  = res.totalRegistros;
+          this.estadoBandeja.itemsPorPagina  = res.itemsPorPagina;
+          this.renderizarBandeja(res.casos);
+        })
+        .withFailureHandler(err => this._mostrarErrorBandeja(err.message))
+        .obtenerCasosPaginados(
+          contexto,
+          window.USUARIO_ACTUAL.idAgente,
+          window.USUARIO_ACTUAL.idArea,
+          this.estadoBandeja.pagina,
+          this.estadoBandeja.terminoBusqueda,
+          filtrosAv
+        );
+    },
+
+    // Refresco silencioso: no muestra spinner, solo actualiza si
+    // el usuario está en página 1 sin búsqueda activa.
+    cargarDatosSilencioso: function() {
+      const contexto  = this._contextoFiltro();
+      const filtrosAv = this.obtenerPaqueteFiltros();
+
+      google.script.run
+        .withSuccessHandler(res => {
+          const sinFiltro = this.estadoBandeja.terminoBusqueda === '' && this.estadoBandeja.pagina === 1;
+          if (res.success && sinFiltro) {
+            this.estadoBandeja.datos          = res.casos;
+            this.estadoBandeja.totalRegistros = res.totalRegistros;
+            this.renderizarBandeja(res.casos);
+          }
+        })
+        .obtenerCasosPaginados(
+          contexto,
+          window.USUARIO_ACTUAL.idAgente,
+          window.USUARIO_ACTUAL.idArea,
+          1, '', filtrosAv
+        );
+    },
+
+    // =========================================================
+    // RENDERIZADO DE LA GRILLA
+    // =========================================================
+    renderizarBandeja: function(lista) {
+      const box = document.getElementById('dashboard-content');
+      if (!box) return;
+
+      if (!lista || lista.length === 0) {
+        box.innerHTML = `
+          <div style="text-align:center; padding:60px; color:var(--text-muted);
+                      background:white; border-radius:12px; border:1px solid var(--border-soft);">
+            <i class="fas fa-filter fa-3x" style="opacity:0.2; margin-bottom:15px;"></i>
+            <p style="font-weight:600;">No se encontraron casos con los filtros aplicados.</p>
+          </div>`;
+        return;
+      }
+
+      const termino  = this.estadoBandeja.terminoBusqueda;
+      const resaltar = (texto) => {
+        if (!termino || !texto) return texto || '';
+        return String(texto).replace(
+          new RegExp(`(${termino})`, 'gi'),
+          `<mark style="background-color:#fef08a; color:#854d0e; padding:0 2px; border-radius:2px;">$1</mark>`
+        );
+      };
+
+      const COLORES_ESTADO = {
+        'PENDIENTE':  { color: 'var(--warning)',   bg: 'var(--warning-bg)' },
+        'ASIGNADO':   { color: 'var(--primary)',   bg: 'var(--primary-light)' },
+        'EN PROCESO': { color: 'var(--success)',   bg: 'var(--success-bg)' },
+        'DERIVADO':   { color: 'var(--def-brown)', bg: '#f3f0f0' },
+        'FINALIZADO': { color: '#10b981',          bg: '#dcfce7' }
+      };
+
+      box.innerHTML = lista.map(c => {
+        const estadoKey   = c.estado.toUpperCase().trim();
+        const { color: colorEstado, bg: bgEstado } = COLORES_ESTADO[estadoKey] || { color: '#64748b', bg: '#f1f5f9' };
+
+        let nombreLimpio = c.ciudadano.replace(/^[\s,\-]+/g, '');
+        const esOrg      = c.dni && c.dni.length > 8;
+        const fechaParts = c.fecha.split(' ');
+        const fecha      = fechaParts[0];
+        const hora       = fechaParts[1] ? fechaParts[1] + ' hs' : '';
+
+        const expTag = c.expediente
+          ? `<span style="font-size:0.75rem; font-weight:700; padding:2px 8px; border-radius:12px;
+                          background:#e0f2fe; color:#0369a1; border:1px solid #bae6fd;">
+               <i class="fas fa-folder-open"></i> EXP-${c.expediente.substring(0,6).toUpperCase()}
+             </span>`
+          : '';
+
+        return `
+          <div class="card-caso" onclick="cargarModulo('DetalleCaso', '${c.id}')">
+            <div style="font-family:monospace; font-size:0.8rem; font-weight:700;
+                        color:var(--primary); white-space:nowrap;">
+              #${c.id.substring(0,8).toUpperCase()}
+            </div>
+            <div>
+              <div style="font-weight:700; color:var(--text-main); font-size:0.95rem; margin-bottom:4px;">
+                <i class="fas ${esOrg ? 'fa-building' : 'fa-user'}"
+                   style="color:${esOrg ? 'var(--def-orange)' : 'var(--primary)'}; margin-right:6px;"></i>
+                ${resaltar(nombreLimpio)}
+              </div>
+              <div style="font-size:0.8rem; color:var(--text-muted);">
+                DNI: ${resaltar(c.dni || 'S/D')} &bull; ${resaltar(c.categoria)}
+              </div>
+              ${expTag}
+            </div>
+            <div style="font-size:0.85rem; color:var(--text-muted);">
+              <div style="font-weight:600; color:var(--text-main);">${c.area || 'Sin Área'}</div>
+              <div>${c.agente || 'Sin Asignar'}</div>
+            </div>
+            <div style="text-align:center;">
+              <div style="font-size:0.8rem; font-weight:700; color:var(--text-main);">${fecha}</div>
+              <div style="font-size:0.75rem; color:var(--text-muted);">${hora}</div>
+            </div>
+            <div style="text-align:center;">
+              <span style="font-size:0.8rem; font-weight:700; padding:5px 12px; border-radius:20px;
+                           background:${bgEstado}; color:${colorEstado}; white-space:nowrap;
+                           border:1px solid ${colorEstado};">
+                ${c.estado}
+              </span>
+            </div>
+          </div>`;
+      }).join('');
+    },
+
+    // =========================================================
+    // REFRESCO DE NOTIFICACIONES DESDE LA BANDEJA
+    // =========================================================
+    checkNotificaciones: function() {
+      if (!window.USUARIO_ACTUAL) return;
+      google.script.run
+        .withSuccessHandler(res => {
+          if (res.success) Portal_Core.iniciarNotificaciones(res.lista, res.total);
+        })
+        .obtenerNotificacionesBackend(
+          window.USUARIO_ACTUAL.idAgente,
+          window.USUARIO_ACTUAL.idArea
+        );
+    },
+
+    // =========================================================
+    // PRIVADOS
+    // =========================================================
+    _contextoFiltro: function() {
+      const m = this.estadoBandeja.modulo;
+      return m === 'MisCasos' ? 'MIO' : m === 'MiArea' ? 'AREA' : 'TODOS';
+    },
+
+    _mostrarSpinnerBandeja: function(msg = 'Cargando...') {
+      const box = document.getElementById('dashboard-content');
+      if (box) box.innerHTML = `
+        <div style="text-align:center; padding:50px;">
+          <i class="fas fa-circle-notch spinner fa-2x" style="color:var(--primary)"></i>
+          <p style="margin-top:10px; color:var(--text-muted); font-weight:500;">${msg}</p>
+        </div>`;
+    },
+
+    _mostrarErrorBandeja: function(msg) {
+      const box = document.getElementById('dashboard-content');
+      if (box) box.innerHTML = `
+        <div style="color:var(--danger); padding:20px; background:var(--danger-bg);
+                    border-radius:8px;">
+          <b>Error:</b> ${msg}
+        </div>`;
+    }
+
+  });
+</script>

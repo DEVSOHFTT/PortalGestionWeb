@@ -1,0 +1,147 @@
+<script>
+  /**
+   * ========================================================================
+   * ATC_Actuaciones_JS.html
+   * PROYECTO: Portal de Gestión - Defensoría del Pueblo
+   * RESPONSABILIDAD: Modal de actuaciones formales del caso.
+   *   - Abrir modal en modo crear o editar.
+   *   - Selección visual del estado de actuación.
+   *   - Filtrado de trámites por categoría del caso.
+   *   - Guardar / actualizar actuación contra el backend.
+   *   - Depende de: AppState_JS (ATC_App.estadoDetalle, Memoria, USUARIO_ACTUAL),
+   *                 Core_JS (mostrarToast, cerrarModal, poblarSelect),
+   *                 ATC_Detalle_JS (iniciarDetalle).
+   * ========================================================================
+   */
+
+  Object.assign(window.ATC_App, {
+
+    // =========================================================
+    // SELECCIÓN VISUAL DEL ESTADO DE ACTUACIÓN
+    // =========================================================
+    seleccionarEstadoActuacion: function(idEstado, elemento) {
+      document.getElementById('modal-act-estado').value = idEstado;
+      const container = document.getElementById('modal-act-estado-group');
+      if (container) {
+        Array.from(container.children).forEach(el => el.classList.remove('active'));
+      }
+      if (elemento) elemento.classList.add('active');
+    },
+
+    // =========================================================
+    // ABRIR MODAL (crear o editar)
+    // =========================================================
+    abrirModalActuacion: function(dataEncoded = null) {
+      const cache = Memoria.leer('diccionariosATC');
+      if (!cache || !cache.tramites || !cache.estados_actuacion) {
+        return Portal_Core.mostrarToast('error', 'Faltan Diccionarios', 'Por favor, reinicie su sesión.');
+      }
+
+      // Filtrar trámites por categoría del caso actual
+      const objCat          = cache.categorias.find(c => c.nombre === this.estadoDetalle.categoriaActual);
+      const tramitesFiltrados = objCat
+        ? cache.tramites.filter(t => t.categoria_id == objCat.id)
+        : cache.tramites;
+      Portal_Core.poblarSelect('modal-act-tramite', tramitesFiltrados);
+
+      // Renderizar botones de estado
+      const groupEstados = document.getElementById('modal-act-estado-group');
+      groupEstados.innerHTML = cache.estados_actuacion
+        .map(e => `<div class="radio-btn-estado"
+                        onclick="ATC_App.seleccionarEstadoActuacion(${e.id}, this)">
+                     ${e.nombre}
+                   </div>`)
+        .join('');
+
+      // Referencias a elementos del modal
+      const modalId    = document.getElementById('modal-act-id');
+      const selTramite = document.getElementById('modal-act-tramite');
+      const inputEstado = document.getElementById('modal-act-estado');
+      const modalText  = document.getElementById('modal-act-texto');
+      const btnGuardar = document.getElementById('btn-guardar-act');
+      const modalTitle = document.getElementById('modal-act-title');
+
+      inputEstado.value = '';
+
+      if (dataEncoded) {
+        // Modo edición: pre-cargar datos existentes
+        const data       = JSON.parse(decodeURIComponent(dataEncoded));
+        modalId.value    = data.actuacion_id;
+        selTramite.value = data.tramite_id || '';
+        modalText.value  = data.observaciones || '';
+        modalTitle.innerText    = 'Editar Actuación Formal';
+        btnGuardar.innerHTML    = '<i class="fas fa-save"></i> Actualizar';
+
+        if (data.estado_id) {
+          const idx = cache.estados_actuacion.findIndex(e => e.id == data.estado_id);
+          if (idx !== -1) this.seleccionarEstadoActuacion(data.estado_id, groupEstados.children[idx]);
+        }
+      } else {
+        // Modo creación
+        modalId.value    = '';
+        selTramite.value = '';
+        modalText.value  = '';
+        modalTitle.innerText = 'Registrar Actuación Formal';
+        btnGuardar.innerHTML = '<i class="fas fa-save"></i> Registrar';
+      }
+
+      btnGuardar.disabled = false;
+      document.getElementById('modal-actuacion').classList.remove('hidden');
+    },
+
+    // =========================================================
+    // GUARDAR / ACTUALIZAR
+    // =========================================================
+    guardarActuacion: function() {
+      const idExistente = document.getElementById('modal-act-id').value;
+      const tramite     = document.getElementById('modal-act-tramite').value;
+      const estado      = document.getElementById('modal-act-estado').value;
+      const texto       = document.getElementById('modal-act-texto').value.trim();
+
+      if (!tramite || !estado || !texto) {
+        return Portal_Core.mostrarToast(
+          'warning', 'Campos Obligatorios',
+          'El Tipo de Trámite, el Estado y las Observaciones son obligatorios.'
+        );
+      }
+
+      const btn = document.getElementById('btn-guardar-act');
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fas fa-spinner spinner"></i> Guardando...';
+
+      const payload = {
+        recepcion_id:  this.estadoDetalle.idCaso,
+        agente_id:     window.USUARIO_ACTUAL.idAgente,
+        tramite_id:    parseInt(tramite),
+        estado_id:     parseInt(estado),
+        observaciones: texto
+      };
+      if (idExistente) payload.id = idExistente;
+
+      google.script.run
+        .withSuccessHandler(res => {
+          if (res.success) {
+            Portal_Core.mostrarToast(
+              'success', 'Éxito',
+              idExistente ? 'Actuación actualizada.' : 'Actuación registrada.'
+            );
+            Portal_Core.cerrarModal('modal-actuacion');
+            this.iniciarDetalle(this.estadoDetalle.idCaso);
+          } else {
+            Portal_Core.mostrarToast('error', 'Error SQL', res.message);
+            btn.disabled  = false;
+            btn.innerHTML = idExistente
+              ? '<i class="fas fa-save"></i> Actualizar'
+              : '<i class="fas fa-save"></i> Registrar';
+          }
+        })
+        .withFailureHandler(err => {
+          Portal_Core.mostrarToast('error', 'Fallo de Red', err.message);
+          btn.disabled  = false;
+          btn.innerHTML = '<i class="fas fa-save"></i> Registrar';
+        })
+        .guardarActuacionBackend(payload);
+    }
+
+  });
+</script>

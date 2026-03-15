@@ -1,0 +1,321 @@
+<script>
+  /**
+   * ========================================================================
+   * CIU_Recepcion_JS.html
+   * PROYECTO: Portal de Gestión - Defensoría del Pueblo
+   * RESPONSABILIDAD: Formulario Paso 2 — Nueva Recepción de Caso.
+   *   - Inicialización del formulario con datos del ciudadano del Paso 1.
+   *   - Lógica dinámica del canal de atención (teléfono, email, territorio).
+   *   - Lógica dinámica del tipo de destino (agente, área, organismo).
+   *   - Toggle de carga diferida (reprogramado).
+   *   - Detección de caso duplicado por categoría.
+   *   - Armado del paquete y guardado contra el backend.
+   *   - No conoce la lógica del buscador (Paso 1) ni de Ficha de Ciudadano.
+   *   - Depende de: AppState_JS (ATC_App.estadoNuevaRecepcion, Memoria, USUARIO_ACTUAL),
+   *                 Core_JS (mostrarToast, mostrarConfirmacion, poblarSelect),
+   *                 ATC_Bandeja_JS (checkNotificaciones).
+   * ========================================================================
+   */
+
+  Object.assign(window.ATC_App, {
+
+    // =========================================================
+    // INICIALIZACIÓN DEL PASO 2
+    // =========================================================
+    iniciarNuevaRecepcionPaso2: function() {
+      if (!this.estadoNuevaRecepcion.ciudadanoActual) {
+        Portal_Core.mostrarToast('error', 'Error de Sesión',
+          'Ciudadano no seleccionado. Volviendo al Paso 1.');
+        cargarModulo('BuscarCiudadano');
+        return;
+      }
+
+      const p = this.estadoNuevaRecepcion.ciudadanoActual;
+
+      // Mostrar nombre y documento del ciudadano en el encabezado
+      document.getElementById('p2-ciudadano-nombre').innerText =
+        p.apellido && p.apellido !== '-'
+          ? `${p.apellido}, ${p.nombre}`.toUpperCase()
+          : p.nombre.toUpperCase();
+      document.getElementById('p2-ciudadano-dni').innerText = p.cuil || p.dni || 'S/D';
+
+      // Reset del formulario
+      document.getElementById('alerta-duplicado').style.display = 'none';
+      document.getElementById('form-recepcion-p2').reset();
+
+      const btnGuardar = document.getElementById('btn-guardar-nr');
+      if (btnGuardar) {
+        btnGuardar.disabled  = false;
+        btnGuardar.innerHTML = '<i class="fas fa-save" style="margin-right:8px;"></i> Generar Recepción';
+      }
+
+      // Ocultar todos los paneles condicionales
+      ['nr-container-contacto','p2-box-tel','p2-box-email',
+       'p2-box-barrio','container-fecha-manual','container-destino'].forEach(id => {
+        document.getElementById(id)?.classList.add('hidden');
+      });
+
+      this.estadoNuevaRecepcion.idCasoDuplicadoCache = null;
+      this.setReprogramado(false);
+
+      // Poblar selects desde caché
+      const cacheATC    = Memoria.leer('diccionariosATC');
+      const cacheGlobal = Memoria.leer('diccionariosGlobales');
+
+      if (cacheATC) {
+        Portal_Core.poblarSelect('nr-canal',         cacheATC.canales);
+        Portal_Core.poblarSelect('nr-categoria',     cacheATC.categorias);
+        Portal_Core.poblarSelect('nr-prioridad',     cacheATC.prioridades);
+        Portal_Core.poblarSelect('nr-tipo-destino',  cacheATC.tipos_destinatario);
+        Portal_Core.poblarSelect('nr-barrio-operativo', cacheATC.barrios);
+      }
+    },
+
+    // =========================================================
+    // LÓGICA DEL CANAL DE ATENCIÓN
+    // Muestra campos extra según el canal seleccionado.
+    // =========================================================
+    cambiarCanalPaso2: function() {
+      const canal     = document.getElementById('nr-canal');
+      const container = document.getElementById('nr-container-contacto');
+      const boxTel    = document.getElementById('p2-box-tel');
+      const boxEmail  = document.getElementById('p2-box-email');
+      const boxBarrio = document.getElementById('p2-box-barrio');
+      const inputTel  = document.getElementById('nr-telefono');
+      const inputEmail = document.getElementById('nr-email');
+
+      // Resetear todos los campos de contacto
+      [boxTel, boxEmail, boxBarrio].forEach(b => b.classList.add('hidden'));
+      if (inputTel)   { inputTel.required   = false; inputTel.value   = ''; }
+      if (inputEmail) { inputEmail.required = false; inputEmail.value = ''; }
+
+      const nombreCanal = canal.options[canal.selectedIndex]?.text.toLowerCase() || '';
+
+      if (nombreCanal.includes('teléfono') || nombreCanal.includes('telefono') ||
+          nombreCanal.includes('whatsapp')) {
+        container.classList.remove('hidden');
+        boxTel.classList.remove('hidden');
+        if (inputTel) inputTel.required = true;
+
+      } else if (nombreCanal.includes('email') || nombreCanal.includes('correo')) {
+        container.classList.remove('hidden');
+        boxEmail.classList.remove('hidden');
+        if (inputEmail) inputEmail.required = true;
+
+      } else if (nombreCanal.includes('territorio') || nombreCanal.includes('operativo')) {
+        container.classList.remove('hidden');
+        boxBarrio.classList.remove('hidden');
+
+      } else {
+        container.classList.add('hidden');
+      }
+    },
+
+    // =========================================================
+    // LÓGICA DEL TIPO DE DESTINO
+    // Carga destinos dinámicamente según el tipo seleccionado.
+    // =========================================================
+    cambiarTipoDestino: function() {
+      const tipo        = document.getElementById('nr-tipo-destino').value;
+      const container   = document.getElementById('container-destino');
+      const select      = document.getElementById('nr-destino-id');
+      const label       = document.getElementById('lbl-destino');
+      const cacheATC    = Memoria.leer('diccionariosATC');
+      const cacheGlobal = Memoria.leer('diccionariosGlobales');
+
+      select.innerHTML = '<option value="">Seleccione...</option>';
+
+      if (!tipo) {
+        container.classList.add('hidden');
+        return;
+      }
+
+      container.classList.remove('hidden');
+      select.required = true;
+
+      // Tipo 1 → Agente interno (pre-selecciona el agente actual)
+      if (tipo === '1' && cacheGlobal && cacheGlobal.agentes) {
+        label.innerHTML = 'Agente Responsable <span style="color:var(--danger)">*</span>';
+        select.innerHTML += cacheGlobal.agentes
+          .map(a => `<option value="${a.id}">${a.apellido}, ${a.nombre}</option>`)
+          .join('');
+        if (window.USUARIO_ACTUAL?.idAgente) {
+          select.value = String(window.USUARIO_ACTUAL.idAgente);
+        }
+
+      // Tipo 2 → Área interna (pre-selecciona el área actual)
+      } else if (tipo === '2' && cacheGlobal && cacheGlobal.areas) {
+        label.innerHTML = 'Área Destino <span style="color:var(--danger)">*</span>';
+        select.innerHTML += cacheGlobal.areas
+          .map(a => `<option value="${a.id}">${a.nombre}</option>`)
+          .join('');
+        if (window.USUARIO_ACTUAL?.idArea) {
+          select.value = String(window.USUARIO_ACTUAL.idArea);
+        }
+
+      // Tipo 3 → Organismo externo
+      } else if (tipo === '3' && cacheATC && cacheATC.organismos) {
+        label.innerHTML = 'Organismo Externo <span style="color:var(--danger)">*</span>';
+        select.innerHTML += cacheATC.organismos
+          .map(o => `<option value="${o.id}">${o.nombre}</option>`)
+          .join('');
+      }
+    },
+
+    // =========================================================
+    // TOGGLE DE CARGA DIFERIDA (REPROGRAMADO)
+    // =========================================================
+    setReprogramado: function(valor) {
+      this.estadoNuevaRecepcion.reprogramado = valor;
+
+      const containerFecha = document.getElementById('container-fecha-manual');
+      const inputFecha     = document.getElementById('nr-fecha-manual');
+      const btnSi          = document.getElementById('btn-repro-si');
+      const btnNo          = document.getElementById('btn-repro-no');
+
+      if (valor) {
+        btnSi.classList.add('active');
+        btnNo.classList.remove('active');
+        containerFecha.classList.remove('hidden');
+        if (inputFecha) inputFecha.required = true;
+      } else {
+        btnNo.classList.add('active');
+        btnSi.classList.remove('active');
+        containerFecha.classList.add('hidden');
+        if (inputFecha) { inputFecha.required = false; inputFecha.value = ''; }
+      }
+    },
+
+    // =========================================================
+    // DETECCIÓN DE CASO DUPLICADO (cliente)
+    // Se llama al cambiar la categoría seleccionada.
+    // =========================================================
+    verificarDuplicadoFront: function() {
+      const catSeleccionada = document.getElementById('nr-categoria').value;
+      const alerta          = document.getElementById('alerta-duplicado');
+      const txtAlerta       = document.getElementById('txt-alerta-duplicado');
+
+      alerta.style.display = 'none';
+      this.estadoNuevaRecepcion.idCasoDuplicadoCache = null;
+
+      if (!catSeleccionada || this.estadoNuevaRecepcion.casosCiudadanoActual.length === 0) return;
+
+      const ESTADOS_ACTIVOS = ['PENDIENTE', 'ASIGNADO', 'DERIVADO', 'EN PROCESO'];
+      const casoPrevio = this.estadoNuevaRecepcion.casosCiudadanoActual.find(c =>
+        String(c.categoria_id) === String(catSeleccionada) &&
+        ESTADOS_ACTIVOS.includes(c.estado.toUpperCase().trim())
+      );
+
+      if (casoPrevio) {
+        alerta.classList.remove('hidden');
+        txtAlerta.innerHTML =
+          `Identificamos que la entidad ya tiene un trámite
+           <b>EN CURSO (${casoPrevio.estado})</b> para esta categoría
+           (Caso <b>#${casoPrevio.id.substring(0, 8).toUpperCase()}</b>).`;
+        this.estadoNuevaRecepcion.idCasoDuplicadoCache = casoPrevio.id;
+      }
+    },
+
+    // =========================================================
+    // GUARDAR NUEVA RECEPCIÓN
+    // =========================================================
+    guardarNuevaRecepcion: function(e, forzarDuplicado = false) {
+      if (e) e.preventDefault();
+
+      const btn            = document.getElementById('btn-guardar-nr');
+      const alerta         = document.getElementById('alerta-duplicado');
+      const alertaVisible  = alerta && !alerta.classList.contains('hidden');
+
+      // Bloquear si hay duplicado sin forzar
+      if (alertaVisible && !forzarDuplicado) {
+        return Portal_Core.mostrarConfirmacion(
+          '¿Crear trámite múltiple?',
+          'La entidad ya posee un trámite activo para esta categoría. ¿Deseas registrar uno nuevo de todas formas?',
+          () => window.ATC_App.guardarNuevaRecepcion(null, true)
+        );
+      }
+
+      btn.disabled  = true;
+      btn.innerHTML = '<i class="fas fa-circle-notch spinner"></i> Generando...';
+
+      const _reset = () => {
+        btn.disabled  = false;
+        btn.innerHTML = '<i class="fas fa-save" style="margin-right:8px;"></i> Generar Recepción';
+      };
+
+      try {
+        const isRepro    = this.estadoNuevaRecepcion.reprogramado;
+        const tipoDestino = document.getElementById('nr-tipo-destino').value;
+        const destinoId   = document.getElementById('nr-destino-id').value;
+
+        // Recolectar datos de contacto según visibilidad
+        let telefonoIngresado = null;
+        let emailIngresado    = null;
+        let observacionesFinales = document.getElementById('nr-observaciones').value.trim();
+
+        if (!document.getElementById('p2-box-tel').classList.contains('hidden')) {
+          telefonoIngresado = document.getElementById('nr-telefono').value.trim();
+        }
+        if (!document.getElementById('p2-box-email').classList.contains('hidden')) {
+          emailIngresado = document.getElementById('nr-email').value.trim();
+        }
+        if (!document.getElementById('p2-box-barrio').classList.contains('hidden')) {
+          const selBarrio = document.getElementById('nr-barrio-operativo');
+          if (selBarrio.selectedIndex > 0) {
+            const txtBarrio = selBarrio.options[selBarrio.selectedIndex].text;
+            observacionesFinales = `[Atención en Territorio | Barrio: ${txtBarrio}]\n\n` + observacionesFinales;
+          }
+        }
+
+        const paquete = {
+          agente_creador_id: window.USUARIO_ACTUAL.idAgente,
+          area_creadora_id:  window.USUARIO_ACTUAL.idArea,
+          ciudadano:         this.estadoNuevaRecepcion.ciudadanoActual,
+          recepcion: {
+            canal_id:              document.getElementById('nr-canal').value,
+            categoria_id:          document.getElementById('nr-categoria').value,
+            prioridad_id:          document.getElementById('nr-prioridad').value,
+            reprogramado:          isRepro,
+            fecha_inicio_manual:   isRepro ? document.getElementById('nr-fecha-manual').value : null,
+            tipo_destinatario_id:  tipoDestino || null,
+            destino_id:            destinoId   || null,
+            telefono:              telefonoIngresado,
+            email:                 emailIngresado,
+            observaciones:         observacionesFinales,
+            forzar_duplicado:      forzarDuplicado
+          }
+        };
+
+        google.script.run
+          .withSuccessHandler(res => {
+            _reset();
+            if (res.success) {
+              Portal_Core.mostrarToast('success', 'Éxito', 'Caso registrado correctamente.');
+              this.estadoNuevaRecepcion.ciudadanoActual = null;
+              this.checkNotificaciones();
+              cargarModulo('MisCasos');
+            } else if (res.isDuplicado) {
+              this.estadoNuevaRecepcion.idCasoDuplicadoCache = res.casoDuplicadoId;
+              Portal_Core.mostrarConfirmacion(
+                'Caso Existente',
+                `Ya existe el Caso #${res.casoDuplicadoId.substring(0, 8).toUpperCase()}. ¿Forzar creación?`,
+                () => window.ATC_App.guardarNuevaRecepcion(null, true)
+              );
+            } else {
+              Portal_Core.mostrarToast('error', 'Error del Sistema', res.message);
+            }
+          })
+          .withFailureHandler(err => {
+            _reset();
+            Portal_Core.mostrarToast('error', 'Fallo de Red', err.message);
+          })
+          .registrarRecepcionBackend(paquete);
+
+      } catch(err) {
+        _reset();
+        Portal_Core.mostrarToast('error', 'Error en el Navegador', err.message);
+      }
+    }
+
+  });
+</script>
