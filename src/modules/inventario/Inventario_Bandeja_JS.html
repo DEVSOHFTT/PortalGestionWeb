@@ -21,7 +21,13 @@
     // =========================================================
     iniciarBandeja: function() {
       document.getElementById('ruta-actual').innerText = 'Inventario General';
-      document.getElementById('inv-filtro-texto').value = '';
+
+      // Limpiar todos los campos de filtro y búsqueda
+      ['inv-filtro-texto','inv-filtro-categoria','inv-filtro-edificio',
+       'inv-filtro-agente','manual-qr-input'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+      });
 
       // Mover modales globales al body para evitar problemas de z-index
       const modalQR  = document.getElementById('modal-ver-qr');
@@ -241,6 +247,9 @@
       document.getElementById('box-alta-equipos').classList.toggle('hidden',  esInsumo);
       document.getElementById('box-alta-insumos').classList.toggle('hidden', !esInsumo);
     },
+
+    // Alias público para el onchange del modal HTML
+    toggleCamposAlta: function() { this._toggleCamposAlta(); },
 
     guardarNuevoActivo: function() {
       const selectCat = document.getElementById('alta-inv-categoria');

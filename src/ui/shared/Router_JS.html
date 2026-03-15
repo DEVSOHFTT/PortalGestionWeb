@@ -3,93 +3,65 @@
    * ========================================================================
    * Router_JS.html
    * PROYECTO: Portal de Gestión - Defensoría del Pueblo
-   * RESPONSABILIDAD: Motor de navegación del portal.
-   *   - Traduce una acción lógica en la vista HTML correspondiente.
-   *   - Llama al inicializador del módulo destino.
-   *   - Coordina sidebar y topbar según el contexto de navegación.
-   *   - Para agregar una nueva ruta: 
-   *       1. Agregar la entrada en MAPA_CONTENEDORES (AppState_JS).
-   *       2. Agregar el bloque de módulo en MAPA_MODULOS aquí abajo.
-   *       3. Agregar la vista en Layout_Main.html.
-   *   - Depende de: AppState_JS (MAPA_CONTENEDORES),
-   *                 Core_JS (mostrarToast),
-   *                 Sidebar_JS (construirMenuSidebar, cerrarSidebar,
-   *                             marcarItemActivo).
    * ========================================================================
    */
 
-  // =========================================================
-  // MAPA DE MÓDULOS
-  // Define para cada ruta: a qué módulo pertenece (para el sidebar)
-  // y qué función inicializadora llamar al activarla.
-  // =========================================================
   const MAPA_MODULOS = {
-
-    // -- ATC (Atención al Ciudadano) --
-    MisCasos:            { sidebar: 'ATC', init: (p) => ATC_App.iniciarBandeja('MisCasos') },
-    MiArea:              { sidebar: 'ATC', init: (p) => ATC_App.iniciarBandeja('MiArea') },
-    TodosLosCasos:       { sidebar: 'ATC', init: (p) => ATC_App.iniciarBandeja('TodosLosCasos') },
-    DetalleCaso:         { sidebar: 'ATC', init: (p) => ATC_App.iniciarDetalle(p) },
-    BuscarCiudadano:     { sidebar: 'ATC', init: (p) => ATC_App.iniciarBuscarCiudadano() },
-    NuevaRecepcionPaso2: { sidebar: 'ATC', init: (p) => ATC_App.iniciarNuevaRecepcionPaso2() },
-    FichaCiudadano:      { sidebar: 'ATC', init: (p) => ATC_App.iniciarFichaCiudadano(p) },
+    // -- ATC --
+    MisCasos:            { sidebar: 'ATC', topbar: true,  init: (p) => ATC_App.iniciarBandeja('MisCasos') },
+    MiArea:              { sidebar: 'ATC', topbar: true,  init: (p) => ATC_App.iniciarBandeja('MiArea') },
+    TodosLosCasos:       { sidebar: 'ATC', topbar: true,  init: (p) => ATC_App.iniciarBandeja('TodosLosCasos') },
+    DetalleCaso:         { sidebar: 'ATC', topbar: true,  init: (p) => ATC_App.iniciarDetalle(p) },
+    BuscarCiudadano:     { sidebar: 'ATC', topbar: true,  init: (p) => ATC_App.iniciarBuscarCiudadano() },
+    NuevaRecepcionPaso2: { sidebar: 'ATC', topbar: true,  init: (p) => ATC_App.iniciarNuevaRecepcionPaso2() },
+    FichaCiudadano:      { sidebar: 'ATC', topbar: true,  init: (p) => ATC_App.iniciarFichaCiudadano(p) },
 
     // -- Inventario --
-    InventarioBandeja:   { sidebar: 'INV', init: (p) => INV_App.iniciarBandeja() },
-    InventarioScan:      { sidebar: 'INV', init: (p) => INV_App.iniciarScan() },
-    InventarioFicha:     { sidebar: 'INV', init: (p) => INV_App.iniciarFicha(p) },
+    InventarioBandeja:   { sidebar: 'INV', topbar: true,  init: (p) => INV_App.iniciarBandeja() },
+    InventarioScan:      { sidebar: 'INV', topbar: true,  init: (p) => INV_App.iniciarBandeja() },  // redirige a Bandeja
+    InventarioFicha:     { sidebar: 'INV', topbar: true,  init: (p) => INV_App.iniciarFicha(p) },
 
-    // -- Hub y Login (sin sidebar) --
-    PortalHome:          { sidebar: null,  init: (p) => {} },
-    Login:               { sidebar: null,  init: (p) => {} },
+    // -- Hub: muestra topbar pero NO sidebar --
+    PortalHome:          { sidebar: null,  topbar: true,  init: (p) => {} },
 
-    // Agregar nuevos módulos aquí:
-    // NuevoModulo: { sidebar: 'COD', init: (p) => NuevoApp.iniciar(p) },
+    // -- Login: sin topbar ni sidebar --
+    Login:               { sidebar: null,  topbar: false, init: (p) => {} },
   };
 
-  // =========================================================
-  // FUNCIÓN PRINCIPAL DE NAVEGACIÓN
-  // =========================================================
   function cargarModulo(accionLogica, paramExtra = null) {
     try {
-
-      // 1. Cerrar sidebar mobile si estaba abierto
       Portal_Core.cerrarSidebar();
 
-      // 2. Obtener configuración de la ruta
       const ruta = MAPA_MODULOS[accionLogica];
       if (!ruta) {
         Portal_Core.mostrarToast('error', 'Ruta no encontrada', `El módulo "${accionLogica}" no está registrado.`);
         return;
       }
 
-      // 3. Construir el menú lateral según el módulo
       if (ruta.sidebar) {
         Portal_Core.construirMenuSidebar(ruta.sidebar);
       }
 
-      // 4. Ocultar todas las vistas
       document.querySelectorAll('.view-container').forEach(v => v.classList.add('hidden'));
 
-      // 5. Mostrar / ocultar sidebar y topbar según contexto
       const sidebar = document.getElementById('sidebar');
       const topbar  = document.getElementById('topbar');
-      const sinSidebar = !ruta.sidebar;
 
-      if (sidebar) sidebar.classList.toggle('hidden', sinSidebar);
-      if (topbar)  topbar.classList.toggle('hidden',  sinSidebar);
+      // Sidebar: visible solo si la ruta tiene módulo
+      if (sidebar) sidebar.classList.toggle('hidden', !ruta.sidebar);
 
-      // 6. Activar la vista correspondiente
+      // Topbar: visible según la propiedad topbar de la ruta (default true)
+      const mostrarTopbar = ruta.topbar !== false;
+      if (topbar) topbar.classList.toggle('hidden', !mostrarTopbar);
+
       const idVista = window.MAPA_CONTENEDORES[accionLogica];
       if (idVista) {
         const vista = document.getElementById(idVista);
         if (vista) vista.classList.remove('hidden');
       }
 
-      // 7. Marcar ítem activo en el menú
       Portal_Core.marcarItemActivo(accionLogica);
 
-      // 8. Llamar al inicializador del módulo
       if (typeof ruta.init === 'function') ruta.init(paramExtra);
 
     } catch (err) {
@@ -97,5 +69,4 @@
       Portal_Core.mostrarToast('error', 'Error de Navegación', err.message);
     }
   }
-
 </script>

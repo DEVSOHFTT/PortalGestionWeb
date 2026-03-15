@@ -1,4 +1,4 @@
-// src/modules/casos/Casos_Controller.js
+// src/modules/atencion-al-ciudadano/ATC_Controller.js
 
 function obtenerCasosPaginados(tipoFiltro, idAgente, idArea, pagina = 1, terminoBusqueda = '', filtrosAvanzados = {}) {
   const itemsPorPagina = 20;

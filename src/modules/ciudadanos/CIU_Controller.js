@@ -1,4 +1,4 @@
-// src/modules/ciudadanos/Ciudadanos_Controller.js
+// src/modules/ciudadanos/CIU_Controller.js
 
 function buscarCiudadanoBackend(valorBuscado) {
   try {

@@ -280,6 +280,62 @@
         elResp.innerHTML = '<option value="">Seleccione agente...</option>' +
           (cache.agentes || []).map(a => `<option value="${a.id}">${a.apellido}, ${a.nombre}</option>`).join('');
       }
+    },
+
+    // =========================================================
+    // ADJUNTAR FOTO DE EVIDENCIA
+    // Lee la imagen seleccionada, la convierte a base64 y la sube.
+    // =========================================================
+    procesarFotoEvidencia: function(input) {
+      if (!input.files || !input.files[0]) return;
+
+      const archivo    = input.files[0];
+      const maxBytes   = 5 * 1024 * 1024; // 5 MB
+
+      if (archivo.size > maxBytes) {
+        Portal_Core.mostrarToast('warning', 'Archivo muy grande',
+          'La foto no puede superar los 5 MB. Reducí la resolución e intentá de nuevo.');
+        input.value = '';
+        return;
+      }
+
+      Portal_Core.mostrarToast('info', 'Subiendo foto...', 'Procesando imagen, un momento.', 10000, false);
+
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const base64Full = e.target.result;
+        // Separar el prefijo "data:image/jpeg;base64," del dato puro
+        const partes     = base64Full.split(',');
+        const mimeType   = partes[0].split(':')[1].split(';')[0];
+        const base64Data = partes[1];
+
+        const payload = {
+          activo_id:      this.estadoActual.idQR,
+          agente_id:      window.USUARIO_ACTUAL.idAgente,
+          base64_data:    base64Data,
+          mime_type:      mimeType,
+          nombre_archivo: archivo.name
+        };
+
+        google.script.run
+          .withSuccessHandler(res => {
+            input.value = '';
+            if (res.success) {
+              Portal_Core.mostrarToast('success', 'Foto adjuntada',
+                'La evidencia fotográfica fue guardada correctamente.');
+              this.iniciarFicha(this.estadoActual.idQR);
+            } else {
+              Portal_Core.mostrarToast('error', 'Error al subir', res.message);
+            }
+          })
+          .withFailureHandler(err => {
+            input.value = '';
+            Portal_Core.mostrarToast('error', 'Fallo de Red', err.message);
+          })
+          .subirFotoEvidenciaBackend(payload);
+      };
+
+      reader.readAsDataURL(archivo);
     }
 
   });

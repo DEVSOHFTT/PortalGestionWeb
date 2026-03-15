@@ -147,13 +147,27 @@
 
             this.cambiarTipoEntidad();
 
+            // Poblar banner de resumen verde
+            const apellido  = res.data.apellido && res.data.apellido !== '-' ? res.data.apellido : '';
+            const nombreBanner = apellido
+              ? `${apellido}, ${res.data.nombre}`.toUpperCase()
+              : (res.data.nombre || '').toUpperCase();
+            const elResNombre   = document.getElementById('resumen-nombre');
+            const elResCuil     = document.getElementById('resumen-cuil');
+            const elResContacto = document.getElementById('resumen-contacto');
+            if (elResNombre)   elResNombre.innerText   = nombreBanner;
+            if (elResCuil)     elResCuil.innerText     = res.data.cuil || res.data.dni || 'S/D';
+            if (elResContacto) elResContacto.innerText = res.data.telefono || res.data.email || 'Sin contacto';
+
             // Mostrar resumen colapsado
             document.getElementById('resumen-ciudadano').classList.remove('hidden');
             document.getElementById('wrapper-formularios').classList.add('hidden');
             document.getElementById('contenedor-locacion').style.opacity = '0.4';
 
-            this.estadoNuevaRecepcion.casosCiudadanoActual = res.historial || [];
-            this.dibujarHistorialCiudadano(res.historial || []);
+            // CORRECCIÓN: el backend devuelve res.data.casos_previos, no res.historial
+            const casos = res.data.casos_previos || [];
+            this.estadoNuevaRecepcion.casosCiudadanoActual = casos;
+            this.dibujarHistorialCiudadano(casos);
 
           } else {
             // Ciudadano nuevo

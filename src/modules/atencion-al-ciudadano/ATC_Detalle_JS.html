@@ -76,27 +76,101 @@
       this._pintarBadgeEstado(gestion.estado);
 
       // ── Datos del caso ──
-      const campos = {
-        'vc-fecha':      gestion.fechaInicio,
-        'vc-canal':      gestion.canal,
-        'vc-categoria':  gestion.categoria,
-        'vc-prioridad':  gestion.prioridad,
-        'vc-obs':        gestion.observaciones || 'Sin observaciones registradas.'
+      // CORRECCIÓN: el backend devuelve gestion.fecha (no fechaInicio)
+      const camposCaso = {
+        'vc-fecha':        gestion.fecha,
+        'vc-canal':        gestion.canal,
+        'vc-categoria':    gestion.categoria,
+        'vc-prioridad':    gestion.prioridad,
+        'vc-area':         gestion.areaNombre,
+        'vc-agente-resp':  gestion.agenteResp,
+        'vc-agente-origen': gestion.agenteOrigen,
+        'vc-obs':          gestion.observaciones || 'Sin observaciones registradas.'
       };
-      Object.entries(campos).forEach(([id, val]) => {
+      Object.entries(camposCaso).forEach(([id, val]) => {
         const el = document.getElementById(id);
         if (el) el.innerText = val || 'S/D';
       });
 
-      // ── Datos del ciudadano ──
-      const esCiudadano = !ciudadano.es_organizacion;
-      document.getElementById('vc-ciudadano-nombre').innerText =
-        esCiudadano
-          ? `${ciudadano.apellido || ''}, ${ciudadano.nombre || ''}`.trim()
-          : ciudadano.nombre || 'S/D';
-      document.getElementById('vc-ciudadano-dni').innerText  = ciudadano.dni  || 'S/D';
-      document.getElementById('vc-ciudadano-tel').innerText  = ciudadano.telefono || 'S/D';
-      document.getElementById('vc-ciudadano-mail').innerText = ciudadano.email    || 'S/D';
+      // ── Expediente ──
+      const elExp = document.getElementById('vc-expediente');
+      if (elExp) {
+        const tieneExp = gestion.expediente && gestion.expediente !== 'No posee';
+        elExp.innerHTML = tieneExp
+          ? `<span class="exp-badge-solid">
+               <i class="fas fa-file-contract" style="margin-right:4px;"></i>
+               ${gestion.expediente}
+             </span>
+             <button class="btn btn-outline"
+                     style="padding:2px 8px; font-size:0.7rem; margin-left:6px;
+                            color:var(--danger); border-color:var(--danger);"
+                     onclick="ATC_App.desvincularExpediente()" title="Desvincular">
+               <i class="fas fa-unlink"></i>
+             </button>`
+          : `<button class="btn btn-outline"
+                     style="padding:4px 10px; font-size:0.75rem;"
+                     onclick="ATC_App.abrirModalExpediente()">
+               <i class="fas fa-link" style="margin-right:4px;"></i> Vincular
+             </button>`;
+      }
+
+      // ── Ciudadano: nombre y avatar ──
+      // CORRECCIÓN: IDs de la vista usan 'vc-ciu-*', no 'vc-ciudadano-*'
+      const esOrg = String(ciudadano.tipo_entidad_id) === '2' ||
+                    (ciudadano.dni && ciudadano.dni.length > 8);
+      const nombreLimpio = (ciudadano.apellido && ciudadano.apellido !== '-')
+        ? `${ciudadano.apellido}, ${ciudadano.nombre}`.toUpperCase()
+        : (ciudadano.nombre || 'S/D').toUpperCase();
+
+      const avatar = document.getElementById('vc-ciu-avatar');
+      if (avatar) {
+        avatar.innerHTML          = esOrg ? '<i class="fas fa-building"></i>' : '<i class="fas fa-user"></i>';
+        avatar.style.background   = esOrg ? 'var(--warning)' : 'var(--primary)';
+      }
+
+      const elNombre = document.getElementById('vc-ciu-nombre');
+      if (elNombre) elNombre.innerText = nombreLimpio;
+
+      // Pills de identificación
+      const pills = {
+        'vc-ciu-dni':   ciudadano.dni
+          ? `<i class="fas fa-id-card"></i> DNI: ${ciudadano.dni}`
+          : `<i class="fas fa-id-card"></i> Sin DNI`,
+        'vc-ciu-cuil':  ciudadano.cuil
+          ? `<i class="fas fa-hashtag"></i> CUIT/L: ${ciudadano.cuil}`
+          : `<i class="fas fa-hashtag"></i> Sin CUIT/L`,
+        'vc-ciu-tel':   ciudadano.telefono
+          ? `<i class="fas fa-phone-alt"></i> ${ciudadano.telefono}`
+          : `<i class="fas fa-phone-alt"></i> Sin Teléfono`,
+        'vc-ciu-email': ciudadano.email
+          ? `<i class="fas fa-envelope"></i> ${ciudadano.email}`
+          : `<i class="fas fa-envelope"></i> Sin Email`
+      };
+      Object.entries(pills).forEach(([id, html]) => {
+        const el = document.getElementById(id);
+        if (el) el.innerHTML = html;
+      });
+
+      // Panel extra del ciudadano
+      const loc = [];
+      if (ciudadano.calle) loc.push(`${ciudadano.calle} ${ciudadano.altura || ''}`.trim());
+      if (ciudadano.piso || ciudadano.dpto) loc.push(`Piso ${ciudadano.piso || '-'} Dpto ${ciudadano.dpto || '-'}`);
+      const elDom = document.getElementById('vc-ciu-domicilio');
+      if (elDom) elDom.innerText = loc.length ? loc.join(' — ') : 'Sin registrar';
+
+      let edadTxt = 'Sin registrar';
+      if (ciudadano.fecha_nacimiento) {
+        try {
+          const edad = Math.floor((new Date() - new Date(ciudadano.fecha_nacimiento)) / 31557600000);
+          if (edad >= 0) edadTxt = `${edad} años`;
+        } catch(e) {}
+      }
+      const elNac = document.getElementById('vc-ciu-nac');
+      if (elNac) elNac.innerText = edadTxt;
+
+      const GENEROS = { '1': 'Masculino', '2': 'Femenino', '3': 'No Binario' };
+      const elGen = document.getElementById('vc-ciu-genero');
+      if (elGen) elGen.innerText = GENEROS[String(ciudadano.genero_id)] || 'N/D';
 
       // ── Botones contextuales según estado y pertenencia ──
       this._configurarBotonesDetalle(gestion);
@@ -133,8 +207,9 @@
       const boxBtnHistorial  = document.getElementById('box-btn-historial');
       if (!boxTop) return;
 
-      const esMio    = String(gestion.idAgenteResp) === String(window.USUARIO_ACTUAL.idAgente);
-      const esMiArea = String(gestion.idArea)       === String(window.USUARIO_ACTUAL.idArea);
+      // CORRECCIÓN: el backend devuelve agenteRespId y areaDestinoId (no idAgenteResp/idArea)
+      const esMio    = String(gestion.agenteRespId)   === String(window.USUARIO_ACTUAL.idAgente);
+      const esMiArea = String(gestion.areaDestinoId)  === String(window.USUARIO_ACTUAL.idArea);
       const bloqueado = [2, 3].includes(this.estadoDetalle.idEstado); // FINALIZADO / CERRADO
 
       if (bloqueado) {

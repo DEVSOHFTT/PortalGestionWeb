@@ -4,20 +4,9 @@
    * Session_JS.html
    * PROYECTO: Portal de Gestión - Defensoría del Pueblo
    * RESPONSABILIDAD: Ciclo de vida completo de la sesión del usuario.
-   *   - Verificar si hay sesión activa en localStorage.
-   *   - Arrancar el entorno global (boot) tras login exitoso.
-   *   - Cerrar sesión limpiando estado y redirigiendo al login.
-   *   - Depende de: AppState_JS (Memoria, USUARIO_ACTUAL),
-   *                 Core_JS (mostrarToast),
-   *                 Notifications_JS (iniciarNotificaciones),
-   *                 Router_JS (cargarModulo).
    * ========================================================================
    */
 
-  // =========================================================
-  // VERIFICAR SESIÓN
-  // Punto de entrada al cargar la app (llamado desde Main_JS).
-  // =========================================================
   function verificarSesion() {
     const preloader = document.getElementById('preloader-global');
     if (preloader) preloader.style.display = 'none';
@@ -26,10 +15,9 @@
 
     if (sesion && sesion.idAgente) {
       window.USUARIO_ACTUAL = sesion;
-
       document.body.classList.remove('modo-login');
 
-      const topbar = document.getElementById('topbar');
+      const topbar   = document.getElementById('topbar');
       const nombreEl = document.getElementById('nombre-usuario-topbar');
       if (topbar)   topbar.classList.remove('hidden');
       if (nombreEl) nombreEl.innerText = window.USUARIO_ACTUAL.nombre;
@@ -40,10 +28,6 @@
     }
   }
 
-  // =========================================================
-  // ARRANCAR ENTORNO GLOBAL (boot tras login exitoso)
-  // Carga diccionarios globales y notificaciones desde el backend.
-  // =========================================================
   function arrancarEntornoGlobal(usuario) {
     document.querySelectorAll('.view-container').forEach(v => v.classList.add('hidden'));
 
@@ -68,19 +52,14 @@
 
         if (res.success) {
           Memoria.guardar('diccionariosGlobales', res.data.diccionariosGlobales);
-
           Portal_Core.iniciarNotificaciones(
             res.data.notificaciones,
             res.data.totalNotificaciones
           );
-
           cargarModulo('PortalHome');
         } else {
-          Portal_Core.mostrarToast(
-            'error',
-            'Error de Arranque',
-            'No se pudo iniciar el sistema: ' + res.message
-          );
+          Portal_Core.mostrarToast('error', 'Error de Arranque',
+            'No se pudo iniciar el sistema: ' + res.message);
         }
       })
       .withFailureHandler(err => {
@@ -93,18 +72,29 @@
       .bootSystemBackend(usuario.idAgente, usuario.idArea);
   }
 
-  // =========================================================
-  // CERRAR SESIÓN
-  // =========================================================
   function cerrarSesion() {
+    // 1. Limpiar sesión y usuario
     Memoria.borrar('sesionDefensoria');
     window.USUARIO_ACTUAL = null;
 
+    // 2. Detener timer de notificaciones
     if (Portal_Core.temporizadorNotificaciones) {
       clearInterval(Portal_Core.temporizadorNotificaciones);
       Portal_Core.temporizadorNotificaciones = null;
     }
 
+    // 3. Detener timer de bandeja ATC si está corriendo
+    if (window.ATC_App && ATC_App.temporizadores && ATC_App.temporizadores.bandeja) {
+      clearInterval(ATC_App.temporizadores.bandeja);
+      ATC_App.temporizadores.bandeja = null;
+    }
+
+    // 4. Cerrar popup QR del inventario si estaba abierto
+    if (window.INV_App && typeof INV_App.detenerCamaraEnVivo === 'function') {
+      INV_App.detenerCamaraEnVivo();
+    }
+
+    // 5. Limpiar contenido visible
     const dashboardContent = document.getElementById('dashboard-content');
     if (dashboardContent) dashboardContent.innerHTML = '';
 
@@ -114,9 +104,6 @@
     verificarSesion();
   }
 
-  // =========================================================
-  // PRIVADO: mostrar pantalla de login
-  // =========================================================
   function _mostrarPantallaLogin() {
     document.body.classList.add('modo-login');
 

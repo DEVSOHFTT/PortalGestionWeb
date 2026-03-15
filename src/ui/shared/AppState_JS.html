@@ -26,7 +26,6 @@
 
   // =========================================================
   // MAPA DE RUTAS → CONTENEDORES HTML
-  // Agrega aquí cada nueva vista que se incorpore al portal.
   // =========================================================
   window.MAPA_CONTENEDORES = {
     'Login':                'view-Login',
@@ -39,7 +38,7 @@
     'NuevaRecepcionPaso2':  'view-NuevaRecepcionPaso2',
     'FichaCiudadano':       'view-FichaCiudadano',
     'InventarioBandeja':    'view-InventarioBandeja',
-    'InventarioScan':       'view-InventarioScan',
+    'InventarioScan':       'view-InventarioBandeja',   // redirige a la misma vista
     'InventarioFicha':      'view-InventarioFicha'
   };
 
@@ -49,11 +48,12 @@
   window.ATC_App = window.ATC_App || {};
 
   window.ATC_App.estadoBandeja = {
-    modulo:          '',
-    datos:           [],
-    pagina:          1,
-    totalRegistros:  0,
-    itemsPorPagina:  20
+    modulo:           '',
+    datos:            [],
+    pagina:           1,
+    totalRegistros:   0,
+    itemsPorPagina:   20,
+    terminoBusqueda:  ''
   };
 
   window.ATC_App.estadoDetalle = {
@@ -82,13 +82,23 @@
 
   // =========================================================
   // ESTADO: MÓDULO INVENTARIO
+  // FIX: agregadas todas las propiedades que usa Inventario_Bandeja_JS
   // =========================================================
   window.INV_App = window.INV_App || {};
 
   window.INV_App.estadoBandeja = {
-    modulo:  'Equipos',
-    pagina:  1,
-    filtros: {}
+    datosOriginales:  [],    // usada por procesarFiltrosLocales
+    timeoutBusqueda:  null   // usada por filtrarBandejaDebounced
   };
+
+  window.INV_App.estadoActual = {
+    activo: null,
+    idQR:   null
+  };
+
+  // Variables del scanner (declaradas aquí para que persistan entre navegaciones)
+  window.INV_App._popupQR         = null;
+  window.INV_App._listenerMensaje = null;
+  window.INV_App._stream          = null;
 
 </script>

@@ -4,12 +4,6 @@
    * Sidebar_JS.html
    * PROYECTO: Portal de Gestión - Defensoría del Pueblo
    * RESPONSABILIDAD: Control completo del menú lateral (sidebar).
-   *   - Construcción del menú contextual según el módulo activo.
-   *   - Apertura/cierre del sidebar (desktop y mobile).
-   *   - Navegación de regreso al hub.
-   *   - Para agregar un nuevo módulo con menú propio: añadir un nuevo
-   *     bloque else if en construirMenuSidebar() con su codigoModulo.
-   *   - Depende de: AppState_JS, Core_JS.
    * ========================================================================
    */
 
@@ -17,9 +11,6 @@
 
   Object.assign(window.Portal_Core, {
 
-    // =========================================================
-    // TOGGLE SIDEBAR (mobile / off-canvas)
-    // =========================================================
     toggleSidebar: function() {
       const sidebar = document.getElementById('sidebar');
       const overlay = document.getElementById('sidebar-overlay');
@@ -36,19 +27,10 @@
       if (overlay) overlay.classList.remove('active');
     },
 
-    // =========================================================
-    // VOLVER AL HUB PRINCIPAL
-    // =========================================================
     volverAlHub: function() {
       cargarModulo('PortalHome');
     },
 
-    // =========================================================
-    // CONSTRUCCIÓN DEL MENÚ CONTEXTUAL
-    // Cada módulo define sus propios ítems de navegación.
-    // Para agregar un nuevo módulo: agregar un bloque else if
-    // con el codigoModulo correspondiente.
-    // =========================================================
     construirMenuSidebar: function(codigoModulo) {
       const menu = document.getElementById('sidebar-contextual-menu');
       if (!menu) return;
@@ -66,36 +48,31 @@
       if (codigoModulo === 'ATC') {
         menu.innerHTML = `
           ${seccion('Atención al Ciudadano')}
-          ${item('BuscarCiudadano', 'fa-search',     'Buscar Ciudadano')}
+          ${item('BuscarCiudadano', 'fa-search', 'Buscar Ciudadano')}
           ${seccion('Bandejas de Trabajo')}
-          ${item('MisCasos',        'fa-user-check', 'Mis Casos')}
-          ${item('MiArea',          'fa-building',   'Mi Área')}
-          ${item('TodosLosCasos',   'fa-database',   'Histórico General')}
+          ${item('MisCasos',      'fa-user-check', 'Mis Casos')}
+          ${item('MiArea',        'fa-building',   'Mi Área')}
+          ${item('TodosLosCasos', 'fa-database',   'Histórico General')}
         `;
       }
 
       else if (codigoModulo === 'INV') {
+        // Sin ítem separado de scanner — está integrado en la Bandeja
         menu.innerHTML = `
-          ${seccion('Operativa de Campo')}
-          ${item('InventarioScan',   'fa-qrcode', 'Escanear Activo (QR)')}
-          ${seccion('Gestión e Informes')}
-          ${item('InventarioBandeja','fa-boxes',  'Inventario General')}
+          ${seccion('Inventario General')}
+          ${item('InventarioBandeja', 'fa-boxes', 'Activos e Insumos')}
         `;
       }
 
-      // Agregar nuevos módulos aquí:
-      // else if (codigoModulo === 'RRHH') { ... }
     },
 
-    // =========================================================
-    // MARCAR ÍTEM ACTIVO EN EL MENÚ
-    // =========================================================
     marcarItemActivo: function(accionLogica) {
       document.querySelectorAll('.menu li').forEach(li => li.classList.remove('active'));
       const itemActivo = document.getElementById('m-' + accionLogica);
-      if (itemActivo) itemActivo.classList.add('active');
+      // InventarioScan y InventarioBandeja activan el mismo ítem
+      const target = itemActivo || document.getElementById('m-InventarioBandeja');
+      if (target) target.classList.add('active');
     }
 
   });
-
 </script>
