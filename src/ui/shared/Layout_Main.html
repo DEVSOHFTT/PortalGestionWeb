@@ -205,6 +205,11 @@
         <?!= include('src/modules/inventario/Inventario_Ficha_View'); ?>
       </div>
 
+      <!-- ── Módulo: Administración ── -->
+      <div id="view-AdminUsuarios" class="view-container hidden">
+        <?!= include('src/modules/admin/Admin_Usuarios_View'); ?>
+      </div>
+
       <!-- Agregar nuevas vistas aquí -->
 
     </div>
@@ -277,6 +282,11 @@
   <?!= include('src/modules/inventario/Inventario_Bandeja_JS'); ?>
   <?!= include('src/modules/inventario/Inventario_Ficha_JS'); ?>
   <?!= include('src/modules/inventario/Inventario_Scan_JS'); ?>
+
+  <!-- =====================================================
+       SCRIPTS — MÓDULO: Administración
+       ===================================================== -->
+  <?!= include('src/modules/admin/Admin_Usuarios_JS'); ?>
 
   <!-- Agregar nuevos módulos aquí -->
 

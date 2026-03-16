@@ -1,0 +1,122 @@
+<!-- =====================================================
+     VISTA: Administración de Usuarios
+     Solo visible para tipo_usuario = 1 (Sistemas)
+     ===================================================== -->
+<div style="padding: 20px; max-width: 900px; margin: 0 auto;">
+
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:25px;">
+    <div>
+      <h2 style="font-size:1.3rem; font-weight:800; color:var(--text-main); margin:0;">
+        <i class="fas fa-users-cog" style="color:var(--primary); margin-right:8px;"></i>
+        Gestión de Usuarios
+      </h2>
+      <p style="font-size:0.8rem; color:var(--text-muted); margin-top:4px;">
+        Crear usuarios, asignar permisos y resetear contraseñas.
+      </p>
+    </div>
+    <button class="btn btn-primary" onclick="AdminUsuarios.abrirModalCrear()">
+      <i class="fas fa-user-plus" style="margin-right:6px;"></i> Nuevo Usuario
+    </button>
+  </div>
+
+  <!-- Loader -->
+  <div id="admin-usr-loader" style="text-align:center; padding:40px;">
+    <i class="fas fa-circle-notch spinner fa-2x" style="color:var(--primary);"></i>
+    <p style="margin-top:10px; color:var(--text-muted);">Cargando usuarios...</p>
+  </div>
+
+  <!-- Tabla de usuarios -->
+  <div id="admin-usr-tabla" class="hidden">
+    <div id="admin-usr-body"></div>
+  </div>
+
+</div>
+
+<!-- =====================================================
+     MODAL: Crear Usuario
+     ===================================================== -->
+<div id="modal-crear-usuario" class="modal-overlay hidden">
+  <div class="modal-box" style="max-width:550px;">
+    <div class="modal-header">
+      <span><i class="fas fa-user-plus" style="color:var(--primary)"></i> Nuevo Usuario del Sistema</span>
+      <button class="btn-icono" style="border:none;" onclick="Portal_Core.cerrarModal('modal-crear-usuario')">
+        <i class="fas fa-times"></i>
+      </button>
+    </div>
+
+    <!-- Selector de agente -->
+    <div class="form-group" style="margin-bottom:15px;">
+      <label class="form-label">Agente (sin usuario asignado) <span style="color:var(--danger)">*</span></label>
+      <select id="adm-agente" class="form-input">
+        <option value="">Seleccione un agente...</option>
+      </select>
+    </div>
+
+    <!-- Password -->
+    <div class="form-group" style="margin-bottom:15px;">
+      <label class="form-label">Contraseña inicial <span style="color:var(--danger)">*</span></label>
+      <div style="display:flex; gap:8px;">
+        <input type="text" id="adm-password" class="form-input" placeholder="Mínimo 6 caracteres" style="flex:1;">
+        <button class="btn btn-outline" onclick="AdminUsuarios.generarPassword()" title="Generar automática" style="padding:8px 14px;">
+          <i class="fas fa-dice"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- Tipo de usuario -->
+    <div class="form-group" style="margin-bottom:15px;">
+      <label class="form-label">Tipo de usuario <span style="color:var(--danger)">*</span></label>
+      <select id="adm-tipo-usuario" class="form-input">
+        <option value="">Seleccione tipo...</option>
+      </select>
+    </div>
+
+    <!-- Permisos -->
+    <div class="form-group" style="margin-bottom:15px;">
+      <label class="form-label">Permisos del sistema</label>
+      <div style="display:flex; gap:8px; margin-bottom:8px;">
+        <button class="btn btn-outline" onclick="AdminUsuarios.seleccionarTodosPermisos(true)" style="font-size:0.75rem; padding:4px 10px;">Todos</button>
+        <button class="btn btn-outline" onclick="AdminUsuarios.seleccionarTodosPermisos(false)" style="font-size:0.75rem; padding:4px 10px;">Ninguno</button>
+      </div>
+      <div id="adm-permisos-grid" style="max-height:200px; overflow-y:auto; border:1px solid var(--border-soft); border-radius:8px; padding:10px;">
+        <!-- Se llena dinámicamente -->
+      </div>
+    </div>
+
+    <div style="text-align:right; margin-top:20px;">
+      <button class="btn btn-outline" onclick="Portal_Core.cerrarModal('modal-crear-usuario')">Cancelar</button>
+      <button class="btn btn-primary" id="btn-crear-usuario" onclick="AdminUsuarios.guardarUsuario()">
+        <i class="fas fa-save" style="margin-right:6px;"></i> Crear Usuario
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- =====================================================
+     MODAL: Resetear Password
+     ===================================================== -->
+<div id="modal-reset-password" class="modal-overlay hidden">
+  <div class="modal-box" style="max-width:400px;">
+    <div class="modal-header">
+      <span><i class="fas fa-key" style="color:var(--warning)"></i> Resetear Contraseña</span>
+      <button class="btn-icono" style="border:none;" onclick="Portal_Core.cerrarModal('modal-reset-password')">
+        <i class="fas fa-times"></i>
+      </button>
+    </div>
+
+    <input type="hidden" id="reset-dni" value="">
+    <p id="reset-nombre-agente" style="font-weight:700; margin-bottom:15px; color:var(--text-main);"></p>
+
+    <div class="form-group">
+      <label class="form-label">Nueva contraseña <span style="color:var(--danger)">*</span></label>
+      <input type="text" id="reset-nuevo-pass" class="form-input" placeholder="Mínimo 6 caracteres">
+    </div>
+
+    <div style="text-align:right; margin-top:20px;">
+      <button class="btn btn-outline" onclick="Portal_Core.cerrarModal('modal-reset-password')">Cancelar</button>
+      <button class="btn btn-primary" id="btn-reset-pass" onclick="AdminUsuarios.ejecutarReset()">
+        <i class="fas fa-sync-alt" style="margin-right:6px;"></i> Resetear
+      </button>
+    </div>
+  </div>
+</div>

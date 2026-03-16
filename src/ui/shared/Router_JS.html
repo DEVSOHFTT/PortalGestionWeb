@@ -21,6 +21,9 @@
     InventarioScan:      { sidebar: 'INV', topbar: true,  init: (p) => INV_App.iniciarBandeja() },  // redirige a Bandeja
     InventarioFicha:     { sidebar: 'INV', topbar: true,  init: (p) => INV_App.iniciarFicha(p) },
 
+    // -- Administración --
+    AdminUsuarios:       { sidebar: null,  topbar: true,  init: (p) => AdminUsuarios.iniciar() },
+
     // -- Hub: muestra topbar pero NO sidebar --
     PortalHome:          { sidebar: null,  topbar: true,  init: (p) => {} },
 

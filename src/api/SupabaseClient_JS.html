@@ -8,7 +8,7 @@
    * ========================================================================
    */
 
-  const SUPABASE_URL      = 'https://qgegablqfspqczxygwvf.supabase.co';
+  const SUPABASE_URL = 'https://qgegablqfspqczxygwvf.supabase.co';
   const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFnZWdhYmxxZnNwcWN6eHlnd3ZmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIzODY3NDQsImV4cCI6MjA4Nzk2Mjc0NH0.5vFy9sEnT0ThEeL43_gbZS71PJW30D6k_cYnmfsoH4s';
 
   // Placeholder hasta que la librería cargue
@@ -100,7 +100,7 @@
     return true;
   }
 
-  // Intentar inicializar inmediatamente
+  // Intentar inicializar inmediatamente 
   if (!_initSupabaseClient()) {
     // Si la librería aún no cargó, reintentar cada 100ms (máx 10s)
     var _sbRetry = setInterval(function() {

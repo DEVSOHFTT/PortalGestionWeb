@@ -1,0 +1,290 @@
+<script>
+  /**
+   * ========================================================================
+   * Admin_Usuarios_JS.html
+   * PROYECTO: Portal de Gestión - Defensoría del Pueblo
+   * RESPONSABILIDAD: Panel de gestión de usuarios del sistema.
+   *   - Solo accesible para tipo_usuario = 1 (Sistemas)
+   *   - Crear usuarios con Supabase Auth
+   *   - Asignar/editar permisos
+   *   - Resetear contraseñas
+   *   - Listar y desactivar usuarios
+   * ========================================================================
+   */
+
+  window.AdminUsuarios = {
+
+    _cache: null,
+
+    // =========================================================
+    // INICIALIZACIÓN
+    // =========================================================
+    iniciar: function() {
+      document.getElementById('ruta-actual').innerText = 'Administración de Usuarios';
+
+      // Verificar permiso: solo tipo 1 (Sistemas)
+      if (!window.USUARIO_ACTUAL || parseInt(window.USUARIO_ACTUAL.tipoUsuario) !== 1) {
+        Portal_Core.mostrarToast('error', 'Acceso Denegado', 'Solo usuarios de tipo Sistemas pueden acceder a este módulo.');
+        cargarModulo('PortalHome');
+        return;
+      }
+
+      this.cargarUsuarios();
+    },
+
+    // =========================================================
+    // CARGAR LISTA DE USUARIOS
+    // =========================================================
+    cargarUsuarios: function() {
+      document.getElementById('admin-usr-loader').classList.remove('hidden');
+      document.getElementById('admin-usr-tabla').classList.add('hidden');
+
+      google.script.run
+        .withSuccessHandler(res => {
+          document.getElementById('admin-usr-loader').classList.add('hidden');
+          if (!res.success) {
+            Portal_Core.mostrarToast('error', 'Error', res.message);
+            return;
+          }
+          this.renderizarTabla(res.data);
+          document.getElementById('admin-usr-tabla').classList.remove('hidden');
+        })
+        .withFailureHandler(err => {
+          document.getElementById('admin-usr-loader').classList.add('hidden');
+          Portal_Core.mostrarToast('error', 'Error de Red', err.message);
+        })
+        .listarUsuariosSistema();
+    },
+
+    renderizarTabla: function(usuarios) {
+      const TIPOS = { 1: 'Sistemas', 2: 'Administrador', 3: 'Supervisor', 4: 'Operador', 5: 'Consulta' };
+      const COLORES_TIPO = { 1: '#7c3aed', 2: '#2563eb', 3: '#059669', 4: '#d97706', 5: '#6b7280' };
+
+      const body = document.getElementById('admin-usr-body');
+      if (!usuarios || usuarios.length === 0) {
+        body.innerHTML = `<div style="text-align:center; padding:40px; color:var(--text-muted);">
+          <i class="fas fa-user-slash fa-3x" style="opacity:0.2; margin-bottom:15px;"></i>
+          <p>No hay usuarios registrados.</p></div>`;
+        return;
+      }
+
+      body.innerHTML = usuarios.map(u => {
+        const tipo = TIPOS[u.tipo_usuario_id] || 'Sin tipo';
+        const color = COLORES_TIPO[u.tipo_usuario_id] || '#6b7280';
+        const permisos = (u.accesos || []).length;
+        const estadoBadge = u.estado
+          ? '<span style="color:var(--success); font-weight:700;">Activo</span>'
+          : '<span style="color:var(--danger); font-weight:700;">Inactivo</span>';
+
+        return `
+        <div style="display:flex; justify-content:space-between; align-items:center;
+                    padding:16px 20px; border:1px solid var(--border-soft); border-radius:10px;
+                    margin-bottom:10px; background:var(--bg-surface); transition:0.2s;"
+             onmouseover="this.style.boxShadow='var(--shadow-sm)'"
+             onmouseout="this.style.boxShadow='none'">
+          <div style="display:flex; align-items:center; gap:14px; flex:1;">
+            <div style="width:42px; height:42px; border-radius:50%; background:${color}15;
+                        display:flex; align-items:center; justify-content:center;
+                        font-weight:800; color:${color}; font-size:0.85rem;">
+              ${(u.apellido || 'S')[0]}${(u.nombre || 'D')[0]}
+            </div>
+            <div>
+              <div style="font-weight:700; color:var(--text-main); font-size:0.9rem;">
+                ${u.apellido || ''}, ${u.nombre || ''}
+              </div>
+              <div style="font-size:0.78rem; color:var(--text-muted); display:flex; gap:12px; margin-top:3px;">
+                <span><i class="fas fa-id-card" style="opacity:0.5;"></i> ${u.username}</span>
+                <span style="background:${color}15; color:${color}; padding:1px 8px; border-radius:10px; font-weight:600;">
+                  ${tipo}
+                </span>
+                <span><i class="fas fa-key" style="opacity:0.5;"></i> ${permisos} permisos</span>
+                ${estadoBadge}
+              </div>
+            </div>
+          </div>
+          <div style="display:flex; gap:8px;">
+            <button class="btn btn-outline" style="padding:6px 10px; font-size:0.75rem;"
+                    onclick="AdminUsuarios.abrirResetPassword('${u.username}', '${u.apellido}, ${u.nombre}')"
+                    title="Resetear contraseña">
+              <i class="fas fa-key" style="color:var(--warning);"></i>
+            </button>
+            ${u.estado ? `
+            <button class="btn btn-outline" style="padding:6px 10px; font-size:0.75rem;"
+                    onclick="AdminUsuarios.confirmarDesactivar('${u.id}', '${u.apellido}, ${u.nombre}')"
+                    title="Desactivar usuario">
+              <i class="fas fa-user-slash" style="color:var(--danger);"></i>
+            </button>` : ''}
+          </div>
+        </div>`;
+      }).join('');
+    },
+
+    // =========================================================
+    // MODAL: CREAR USUARIO
+    // =========================================================
+    abrirModalCrear: function() {
+      // Reset form
+      document.getElementById('adm-agente').value = '';
+      document.getElementById('adm-password').value = '';
+      document.getElementById('adm-tipo-usuario').value = '';
+      document.getElementById('adm-permisos-grid').innerHTML = '<p style="color:var(--text-muted); font-size:0.8rem;">Cargando permisos...</p>';
+
+      const btn = document.getElementById('btn-crear-usuario');
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fas fa-save" style="margin-right:6px;"></i> Crear Usuario';
+
+      document.getElementById('modal-crear-usuario').classList.remove('hidden');
+
+      // Cargar diccionarios
+      google.script.run
+        .withSuccessHandler(res => {
+          if (!res.success) {
+            Portal_Core.mostrarToast('error', 'Error', res.message);
+            return;
+          }
+          this._cache = res.data;
+          this._poblarFormulario(res.data);
+        })
+        .obtenerDiccionariosUsuarios();
+    },
+
+    _poblarFormulario: function(data) {
+      // Agentes sin usuario
+      const selAgente = document.getElementById('adm-agente');
+      selAgente.innerHTML = '<option value="">Seleccione un agente...</option>' +
+        data.agentes_sin_usuario.map(a =>
+          `<option value="${a.dni}">${a.apellido}, ${a.nombre} — DNI: ${a.dni}</option>`
+        ).join('');
+
+      // Tipos de usuario
+      const selTipo = document.getElementById('adm-tipo-usuario');
+      selTipo.innerHTML = '<option value="">Seleccione tipo...</option>' +
+        data.tipos_usuario.map(t =>
+          `<option value="${t.id}">${t.nombre} — ${t.descripcion}</option>`
+        ).join('');
+
+      // Permisos como checkboxes
+      const grid = document.getElementById('adm-permisos-grid');
+      grid.innerHTML = data.permisos.map(p => `
+        <label style="display:flex; align-items:center; gap:8px; padding:4px 0; font-size:0.82rem; cursor:pointer;">
+          <input type="checkbox" value="${p.id}" class="adm-permiso-check">
+          <span style="font-weight:600; color:var(--text-main); min-width:130px;">${p.clave_tecnica}</span>
+          <span style="color:var(--text-muted);">${p.nombre}</span>
+        </label>
+      `).join('');
+    },
+
+    seleccionarTodosPermisos: function(valor) {
+      document.querySelectorAll('.adm-permiso-check').forEach(cb => cb.checked = valor);
+    },
+
+    generarPassword: function() {
+      const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+      let pass = '';
+      for (let i = 0; i < 8; i++) pass += chars.charAt(Math.floor(Math.random() * chars.length));
+      document.getElementById('adm-password').value = pass;
+    },
+
+    // =========================================================
+    // GUARDAR USUARIO
+    // =========================================================
+    guardarUsuario: function() {
+      const dni = document.getElementById('adm-agente').value;
+      const password = document.getElementById('adm-password').value.trim();
+      const tipoId = document.getElementById('adm-tipo-usuario').value;
+
+      if (!dni) return Portal_Core.mostrarToast('warning', 'Validación', 'Seleccione un agente.');
+      if (!password || password.length < 6) return Portal_Core.mostrarToast('warning', 'Validación', 'La contraseña debe tener al menos 6 caracteres.');
+      if (!tipoId) return Portal_Core.mostrarToast('warning', 'Validación', 'Seleccione un tipo de usuario.');
+
+      const permisosIds = [];
+      document.querySelectorAll('.adm-permiso-check:checked').forEach(cb => permisosIds.push(cb.value));
+
+      const btn = document.getElementById('btn-crear-usuario');
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fas fa-circle-notch spinner"></i> Creando...';
+
+      google.script.run
+        .withSuccessHandler(res => {
+          btn.disabled = false;
+          btn.innerHTML = '<i class="fas fa-save" style="margin-right:6px;"></i> Crear Usuario';
+          if (res.success) {
+            Portal_Core.cerrarModal('modal-crear-usuario');
+            Portal_Core.mostrarToast('success', 'Usuario Creado', res.message);
+            this.cargarUsuarios();
+          } else {
+            Portal_Core.mostrarToast('error', 'Error', res.message);
+          }
+        })
+        .withFailureHandler(err => {
+          btn.disabled = false;
+          btn.innerHTML = '<i class="fas fa-save" style="margin-right:6px;"></i> Crear Usuario';
+          Portal_Core.mostrarToast('error', 'Error de Red', err.message);
+        })
+        .crearUsuarioSistema({
+          dni: dni,
+          password: password,
+          tipo_usuario_id: tipoId,
+          permisos_ids: permisosIds
+        });
+    },
+
+    // =========================================================
+    // RESETEAR PASSWORD
+    // =========================================================
+    abrirResetPassword: function(dni, nombreCompleto) {
+      document.getElementById('reset-dni').value = dni;
+      document.getElementById('reset-nombre-agente').innerText = nombreCompleto;
+      document.getElementById('reset-nuevo-pass').value = '';
+      document.getElementById('modal-reset-password').classList.remove('hidden');
+    },
+
+    ejecutarReset: function() {
+      const dni = document.getElementById('reset-dni').value;
+      const nuevoPass = document.getElementById('reset-nuevo-pass').value.trim();
+
+      if (!nuevoPass || nuevoPass.length < 6) {
+        return Portal_Core.mostrarToast('warning', 'Validación', 'Mínimo 6 caracteres.');
+      }
+
+      const btn = document.getElementById('btn-reset-pass');
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fas fa-circle-notch spinner"></i>';
+
+      google.script.run
+        .withSuccessHandler(res => {
+          btn.disabled = false;
+          btn.innerHTML = '<i class="fas fa-sync-alt" style="margin-right:6px;"></i> Resetear';
+          if (res.success) {
+            Portal_Core.cerrarModal('modal-reset-password');
+            Portal_Core.mostrarToast('success', 'Contraseña Reseteada', res.message);
+          } else {
+            Portal_Core.mostrarToast('error', 'Error', res.message);
+          }
+        })
+        .resetearPasswordUsuario(dni, nuevoPass);
+    },
+
+    // =========================================================
+    // DESACTIVAR USUARIO
+    // =========================================================
+    confirmarDesactivar: function(usuarioId, nombre) {
+      Portal_Core.mostrarConfirmacion(
+        '¿Desactivar Usuario?',
+        `El usuario de ${nombre} será desactivado y no podrá ingresar al sistema. Esta acción es reversible.`,
+        () => {
+          google.script.run
+            .withSuccessHandler(res => {
+              if (res.success) {
+                Portal_Core.mostrarToast('success', 'Desactivado', res.message);
+                this.cargarUsuarios();
+              } else {
+                Portal_Core.mostrarToast('error', 'Error', res.message);
+              }
+            })
+            .desactivarUsuario(usuarioId);
+        }
+      );
+    }
+  };
+</script>

@@ -82,8 +82,14 @@
 
       Portal_Core.iniciarNotificaciones(notis.lista, notis.total);
       _iniciarPollingNotificaciones(usuario);
+    
+    cargarModulo('PortalHome');
 
-      cargarModulo('PortalHome');
+      // Mostrar card de Admin solo para tipo Sistemas
+      if (window.USUARIO_ACTUAL && parseInt(window.USUARIO_ACTUAL.tipoUsuario) === 1) {
+        const cardAdmin = document.getElementById('hub-card-admin');
+        if (cardAdmin) cardAdmin.style.display = '';
+      } 
 
     } catch (err) {
       const spinnerEl = document.getElementById('spinner-arranque');
