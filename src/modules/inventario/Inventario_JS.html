@@ -403,7 +403,9 @@
          document.getElementById('modal-inv-box-baja').classList.remove('hidden');
       } else if (accion === 'Reparacion') {
          title.innerHTML = '<i class="fas fa-tools" style="color:var(--warning)"></i> Enviar a Reparación';
-         tipoHidden.value = '4'; 
+         tipoHidden.value = '3';
+         document.getElementById('modal-inv-box-destino').classList.remove('hidden');
+         this._cargarSelectoresMovimiento();
       }
 
       document.getElementById('modal-inv-movimiento').classList.remove('hidden');

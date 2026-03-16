@@ -3,13 +3,19 @@
  * CONTROLLER_Inventario.js
  * Módulo de Gestión de Inventario e Infraestructura - Defensoría del Pueblo
  * ========================================================================
+ * CAMBIOS V2.1:
+ *   • crearActivoBackend: campo edificio_destino_id ya coincide con DB
+ *   • registrarMovimientoInventarioBackend: 
+ *       - Soporte para tipo 3 (Reparación) → estado_id = 3
+ *       - No borra edificio_destino_id del payload (la columna ahora existe)
+ *       - tipo 6 (Baja) → estado_id = 4 (De baja), no 5
+ * ========================================================================
  */
 
 function obtenerDiccionariosInventario() {
   try {
     const diccionarios = {};
     
-    // Función auxiliar para atrapar errores de Supabase
     const fetchSeguro = (tabla, query) => {
        const res = supabaseFetch(tabla, "GET", null, query);
        if (res && res.error) throw new Error(`Fallo en tabla ${tabla}: ${res.error.message || 'Error desconocido'}`);
@@ -21,8 +27,6 @@ function obtenerDiccionariosInventario() {
     diccionarios.edificios = fetchSeguro("inv_edificios", "?select=*&order=nombre.asc");
     diccionarios.estados = fetchSeguro("inv_estados", "?select=*&order=id.asc");
     diccionarios.tipos_movimiento = fetchSeguro("inv_tipos_movimiento", "?select=*&order=id.asc");
-    
-    // Core
     diccionarios.agentes = fetchSeguro("agentes", "?estado=eq.true&select=id,nombre,apellido&order=apellido.asc");
     diccionarios.areas = fetchSeguro("areas", "?select=id,nombre&order=nombre.asc");
 
@@ -55,7 +59,7 @@ function obtenerInventarioBackend(filtros = {}) {
 function obtenerFichaActivoBackend(idActivo) {
   try {
     const activoData = supabaseFetch("vw_inv_bandeja", "GET", null, `?activo_id=eq.${idActivo}&limit=1`);
-    if (!activoData || activoData.length === 0 || activoData.error) throw new Error("El activo escaneado no existe en la base de datos.");
+    if (!activoData || activoData.length === 0 || activoData.error) throw new Error("El activo escaneado no existe en la base de datos. Verifique e intente de nuevo.");
     
     const historialData = supabaseFetch("vw_inv_historial", "GET", null, `?activo_id=eq.${idActivo}&order=fecha_movimiento.desc`);
     
@@ -67,7 +71,6 @@ function obtenerFichaActivoBackend(idActivo) {
 
 function crearActivoBackend(payload, idAgenteRegistro) {
   try {
-    // Generador de ID corto alfanumérico para el QR (Ej: DF-A8X9)
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
     let shortId = 'DF-';
     for (let i = 0; i < 6; i++) shortId += chars.charAt(Math.floor(Math.random() * chars.length));
@@ -77,11 +80,11 @@ function crearActivoBackend(payload, idAgenteRegistro) {
     const resActivo = supabaseFetch("inv_activos", "POST", payload);
     if (resActivo && resActivo.error) throw new Error(resActivo.error.message);
     
-    // Generar movimiento de Alta
+    // FIX V2.1: campo edificio_destino_id coincide con la columna en DB
     supabaseFetch("inv_movimientos", "POST", {
       id: "MOV-" + shortId + Date.now().toString().slice(-4),
       activo_id: payload.id,
-      tipo_movimiento_id: 1, // 1 = Alta / Ingreso
+      tipo_movimiento_id: 1,
       cantidad: payload.stock_actual || 1,
       agente_registro_id: idAgenteRegistro,
       edificio_destino_id: payload.edificio_id || null,
@@ -115,18 +118,24 @@ function registrarMovimientoInventarioBackend(payload) {
        if (payload.agente_destino_id) payloadUpdateActivo.agente_asignado_id = payload.agente_destino_id;
        if (payload.edificio_destino_id) payloadUpdateActivo.edificio_id = payload.edificio_destino_id;
        
+       // FIX V2.1: Mapeo correcto de tipo_movimiento → estado del activo
        if (payload.tipo_movimiento_id === 6) {
-          payloadUpdateActivo.estado_id = 5; 
+          // Baja → estado 4 (De baja)
+          payloadUpdateActivo.estado_id = 4;
           payloadUpdateActivo.area_asignada_id = null; 
           payloadUpdateActivo.agente_asignado_id = null; 
-       } else if (payload.tipo_movimiento_id === 2 || payload.tipo_movimiento_id === 4) {
+       } else if (payload.tipo_movimiento_id === 3) {
+          // FIX V2.1: Reparación → estado 3 (En reparación)
+          payloadUpdateActivo.estado_id = 3;
+       } else if (payload.tipo_movimiento_id === 4 || payload.tipo_movimiento_id === 2) {
+          // Asignación o Traslado → estado 2 (Asignado)
           payloadUpdateActivo.estado_id = 2; 
        }
     }
 
     const movId = "MOV-" + Date.now().toString().slice(-6);
     payload.id = movId;
-    delete payload.edificio_destino_id; 
+    // FIX V2.1: NO borramos edificio_destino_id — la columna ahora existe en la tabla
 
     supabaseFetch("inv_movimientos", "POST", payload);
     if (Object.keys(payloadUpdateActivo).length > 0) {
@@ -138,9 +147,9 @@ function registrarMovimientoInventarioBackend(payload) {
     return { success: false, message: e.message }; 
   }
 }
+
 function subirFotoEvidenciaBackend(payload) {
   try {
-    // Decodifica el base64 y lo sube a Google Drive
     const carpetaId = PropertiesService.getScriptProperties().getProperty('DRIVE_CARPETA_EVIDENCIAS');
     if (!carpetaId) throw new Error('Propiedad DRIVE_CARPETA_EVIDENCIAS no configurada en Script Properties.');
 
@@ -155,11 +164,10 @@ function subirFotoEvidenciaBackend(payload) {
     archivo.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
     const urlPublica = `https://drive.google.com/uc?id=${archivo.getId()}`;
 
-    // Registra el movimiento de tipo "Foto Adjuntada" en el historial
     supabaseFetch("inv_movimientos", "POST", {
       id: "MOV-FOTO-" + Date.now().toString().slice(-6),
       activo_id: payload.activo_id,
-      tipo_movimiento_id: 7, // 7 = Foto / Evidencia (agregá este tipo en tu tabla inv_tipos_movimiento)
+      tipo_movimiento_id: 7,
       cantidad: 1,
       agente_registro_id: payload.agente_id,
       observaciones: `Evidencia fotográfica adjuntada. URL: ${urlPublica}`
