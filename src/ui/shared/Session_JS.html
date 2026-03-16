@@ -1,14 +1,10 @@
 <script>
   /**
    * ========================================================================
-   * Session_JS.html — V2.1
+   * Session_JS.html — V2.1.1
    * PROYECTO: Portal de Gestión - Defensoría del Pueblo
    * ========================================================================
-   * CAMBIO: Usa Supabase Auth para verificar sesión.
-   *   - Si hay JWT válido → obtiene perfil via RPC + carga diccionarios directo
-   *   - Si no hay JWT → muestra login
-   *   - El boot ya NO pasa por google.script.run → elimina el bottleneck de GAS
-   *   - Notificaciones via Realtime (websockets) en vez de polling 30s
+   * Guard: si DB no cargó aún, espera. SupabaseClient_JS reintenta.
    * ========================================================================
    */
 
@@ -16,12 +12,18 @@
     const preloader = document.getElementById('preloader-global');
     if (preloader) preloader.style.display = 'none';
 
+    // Guard: si la librería supabase-js no cargó aún, mostrar login
+    // SupabaseClient_JS reintentará verificarSesion() cuando cargue
+    if (!window.DB) {
+      console.warn('[Session] DB no disponible aún — esperando carga de supabase-js...');
+      _mostrarPantallaLogin();
+      return;
+    }
+
     try {
-      // 1. Verificar si hay sesión JWT válida en Supabase
       const perfil = await DB.verificarAuth();
 
       if (perfil) {
-        // Sesión válida — hidratar estado
         window.USUARIO_ACTUAL = perfil;
         Memoria.guardar('sesionDefensoria', perfil);
 
@@ -33,7 +35,6 @@
 
         await arrancarEntornoGlobal(perfil);
       } else {
-        // Sin sesión → limpiar y mostrar login
         Memoria.borrar('sesionDefensoria');
         window.USUARIO_ACTUAL = null;
         _mostrarPantallaLogin();
@@ -63,7 +64,6 @@
     if (contenedor) contenedor.appendChild(spinner);
 
     try {
-      // Cargar diccionarios directamente desde Supabase (sin pasar por GAS)
       const [areasRes, agentesRes] = await Promise.all([
         DB.from('areas').select('id,nombre').order('nombre'),
         DB.from('agentes').select('id,nombre,apellido').eq('estado', true).order('apellido')
@@ -75,16 +75,13 @@
       };
       Memoria.guardar('diccionariosGlobales', diccionarios);
 
-      // Cargar notificaciones iniciales
       const notis = await _cargarNotificacionesDirecto(usuario);
 
       const spinnerEl = document.getElementById('spinner-arranque');
       if (spinnerEl) spinnerEl.remove();
 
       Portal_Core.iniciarNotificaciones(notis.lista, notis.total);
-
-      // Iniciar polling directo a Supabase para notificaciones
-      _iniciarPollingNotificaciones(perfil);
+      _iniciarPollingNotificaciones(usuario);
 
       cargarModulo('PortalHome');
 
@@ -97,9 +94,6 @@
     }
   }
 
-  /**
-   * Carga notificaciones directamente desde Supabase
-   */
   async function _cargarNotificacionesDirecto(usuario) {
     try {
       const qMios = await DB.from('vw_bandeja_casos')
@@ -138,18 +132,13 @@
     }
   }
 
-  /**
-   * Polling directo a Supabase (sin pasar por GAS)
-   * Consulta cada 30s — no consume cuotas de UrlFetchApp.
-   * Cuando se habilite Realtime (plan Pro), reemplazar por DB.subscribe().
-   */
   let _pollingNotisTimer = null;
 
   function _iniciarPollingNotificaciones(usuario) {
     if (_pollingNotisTimer) clearInterval(_pollingNotisTimer);
 
     _pollingNotisTimer = setInterval(async () => {
-      if (!window.USUARIO_ACTUAL) return;
+      if (!window.USUARIO_ACTUAL || !window.DB) return;
       try {
         const totalAnterior = Portal_Core.estadoTotalNotis || 0;
         const notis = await _cargarNotificacionesDirecto(usuario);
@@ -160,7 +149,7 @@
 
         if (notis.total > totalAnterior) {
           Portal_Core.mostrarToast('info', 'Actualización de Bandeja',
-            `Tenés ${notis.total} casos que requieren atención.`, 8000, false);
+            'Tenés ' + notis.total + ' casos que requieren atención.', 8000, false);
           Portal_Core.reproducirSonido('campana');
         }
 
@@ -169,46 +158,27 @@
           Portal_Core.renderizarPanelNotificaciones();
         }
       } catch (e) {
-        console.warn('[Polling] Error consultando notificaciones:', e.message);
+        console.warn('[Polling] Error:', e.message);
       }
     }, 30000);
   }
 
   async function cerrarSesion() {
-    // 1. Cerrar sesión en Supabase Auth
-    await DB.logout();
+    if (window.DB) await DB.logout();
 
-    // 2. Limpiar estado local
     Memoria.borrar('sesionDefensoria');
     Memoria.borrar('diccionariosGlobales');
     Memoria.borrar('diccionariosATC');
     Memoria.borrar('diccionariosINV');
     window.USUARIO_ACTUAL = null;
 
-    // 3. Detener polling de notificaciones
-    if (_pollingNotisTimer) {
-      clearInterval(_pollingNotisTimer);
-      _pollingNotisTimer = null;
-    }
+    if (_pollingNotisTimer) { clearInterval(_pollingNotisTimer); _pollingNotisTimer = null; }
+    if (Portal_Core.temporizadorNotificaciones) { clearInterval(Portal_Core.temporizadorNotificaciones); Portal_Core.temporizadorNotificaciones = null; }
+    if (window.ATC_App && ATC_App.temporizadores && ATC_App.temporizadores.bandeja) { clearInterval(ATC_App.temporizadores.bandeja); ATC_App.temporizadores.bandeja = null; }
+    if (window.INV_App && typeof INV_App.detenerCamaraEnVivo === 'function') INV_App.detenerCamaraEnVivo();
 
-    // 4. Detener timers legacy (por si quedaron)
-    if (Portal_Core.temporizadorNotificaciones) {
-      clearInterval(Portal_Core.temporizadorNotificaciones);
-      Portal_Core.temporizadorNotificaciones = null;
-    }
-    if (window.ATC_App && ATC_App.temporizadores && ATC_App.temporizadores.bandeja) {
-      clearInterval(ATC_App.temporizadores.bandeja);
-      ATC_App.temporizadores.bandeja = null;
-    }
-    if (window.INV_App && typeof INV_App.detenerCamaraEnVivo === 'function') {
-      INV_App.detenerCamaraEnVivo();
-    }
-
-    // 5. Limpiar UI
-    const dashboardContent = document.getElementById('dashboard-content');
-    if (dashboardContent) dashboardContent.innerHTML = '';
-    const formLogin = document.getElementById('form-login');
-    if (formLogin) formLogin.reset();
+    const dc = document.getElementById('dashboard-content'); if (dc) dc.innerHTML = '';
+    const fl = document.getElementById('form-login'); if (fl) fl.reset();
 
     verificarSesion();
   }

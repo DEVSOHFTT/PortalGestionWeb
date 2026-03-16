@@ -3,11 +3,40 @@
  * CONTROLLER_API_Supabase.gs
  * Motor nativo de peticiones HTTP REST hacia Supabase (PostgREST)
  * ========================================================================
+ * CAMBIO V2.1: Credenciales movidas a Script Properties.
+ *
+ * CONFIGURACIÓN REQUERIDA (una sola vez):
+ *   1. Abrí el editor de Apps Script
+ *   2. Menú: Proyecto → Configuración del proyecto → Propiedades del script
+ *   3. Agregá estas dos propiedades:
+ *        SUPABASE_URL  →  https://qgegablqfspqczxygwvf.supabase.co
+ *        SUPABASE_KEY  →  (tu service_role key)
+ *   4. Guardá y listo.
+ *
+ * La key NUNCA debe quedar en el código fuente.
+ * ========================================================================
  */
 
-// 1. CONFIGURACIÓN (Usamos var para asegurar scope global en V8 Apps Script)
-var SUPABASE_URL = "https://qgegablqfspqczxygwvf.supabase.co"; 
-var SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFnZWdhYmxxZnNwcWN6eHlnd3ZmIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MjM4Njc0NCwiZXhwIjoyMDg3OTYyNzQ0fQ.rb_8H2B-ImZpx1AzdyvXhWZxY2oyRJS-JmcV21We5cQ"; 
+// Lectura segura desde Script Properties con cache en memoria
+var _supabaseCache = null;
+
+function _getSupabaseConfig() {
+  if (_supabaseCache) return _supabaseCache;
+  
+  const props = PropertiesService.getScriptProperties();
+  const url = props.getProperty('SUPABASE_URL');
+  const key = props.getProperty('SUPABASE_KEY');
+  
+  if (!url || !key) {
+    throw new Error(
+      'Faltan las Script Properties: SUPABASE_URL y/o SUPABASE_KEY. ' +
+      'Configurarlas en Proyecto → Configuración → Propiedades del script.'
+    );
+  }
+  
+  _supabaseCache = { url: url, key: key };
+  return _supabaseCache;
+}
 
 /**
  * Función maestra para comunicarse con Supabase
@@ -18,19 +47,19 @@ var SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSI
  * @param {boolean} returnCount - Si es true, retorna un objeto {data, count} extrayendo headers.
  */
 function supabaseFetch(endpoint, method = "GET", payload = null, query = "", returnCount = false) {
-  const url = `${SUPABASE_URL}/rest/v1/${endpoint}${query}`;
+  const config = _getSupabaseConfig();
+  const url = `${config.url}/rest/v1/${endpoint}${query}`;
   
   const options = {
     method: method,
     headers: {
-      "apikey": SUPABASE_KEY,
-      "Authorization": `Bearer ${SUPABASE_KEY}`,
+      "apikey": config.key,
+      "Authorization": `Bearer ${config.key}`,
       "Content-Type": "application/json"
     },
     muteHttpExceptions: true
   };
 
-  // Preferencias de Supabase (Insert/Update devuelven registro, Select cuenta total)
   if (method === "POST" || method === "PATCH") options.headers["Prefer"] = "return=representation";
   if (returnCount && method === "GET") options.headers["Prefer"] = "count=exact";
 
@@ -50,7 +79,6 @@ function supabaseFetch(endpoint, method = "GET", payload = null, query = "", ret
       const contentRange = headers['Content-Range'] || headers['content-range'];
       let count = 0;
       if (contentRange) {
-        // Content-Range viene como "0-19/145", extraemos el 145
         count = parseInt(contentRange.split('/')[1], 10);
       }
       return { data: data, count: count };
@@ -66,13 +94,14 @@ function supabaseFetch(endpoint, method = "GET", payload = null, query = "", ret
  * Función para llamar a Procedimientos Almacenados (Stored Procedures / RPC)
  */
 function supabaseRPC(functionName, payload = null) {
-  const url = `${SUPABASE_URL}/rest/v1/rpc/${functionName}`;
+  const config = _getSupabaseConfig();
+  const url = `${config.url}/rest/v1/rpc/${functionName}`;
   
   const options = {
     method: "POST",
     headers: {
-      "apikey": SUPABASE_KEY,
-      "Authorization": `Bearer ${SUPABASE_KEY}`,
+      "apikey": config.key,
+      "Authorization": `Bearer ${config.key}`,
       "Content-Type": "application/json"
     },
     muteHttpExceptions: true

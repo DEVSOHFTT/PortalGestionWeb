@@ -1,11 +1,7 @@
 <script>
   /**
    * ========================================================================
-   * Login_JS.html — V2.1
-   * PROYECTO: Portal de Gestión - Defensoría del Pueblo
-   * ========================================================================
-   * CAMBIO: usa DB.login() (supabase-js directo) en vez de google.script.run
-   * Login sigue siendo DNI + password — DB traduce a email sintético.
+   * Login_JS.html — V2.1.1
    * ========================================================================
    */
 
@@ -21,11 +17,19 @@
     btn.innerHTML = '<i class="fas fa-circle-notch spinner"></i> Validando Agente...';
     errDiv.classList.add('hidden');
 
+    // Guard: verificar que supabase-js haya cargado
+    if (!window.DB) {
+      errText.innerText = 'El sistema aún está cargando. Esperá unos segundos y probá de nuevo.';
+      errDiv.classList.remove('hidden');
+      btn.disabled  = false;
+      btn.innerHTML = 'Ingresar al Sistema <i class="fas fa-arrow-right" style="margin-left:5px;"></i>';
+      return;
+    }
+
     try {
       const res = await DB.login(dni, pass);
 
       if (res.success) {
-        // Guardar perfil en memoria (compatibilidad con USUARIO_ACTUAL)
         Memoria.guardar('sesionDefensoria', res.user);
         verificarSesion();
       } else {
