@@ -232,6 +232,7 @@
     // =========================================================
     // HISTORIAL DE CASOS DEL CIUDADANO
     // =========================================================
+    
     dibujarHistorialCiudadano: function(casos) {
       const box           = document.getElementById('contenedor-historial-ciudadano');
       const badgeContador = document.getElementById('badge-contador-casos');
@@ -242,30 +243,34 @@
       }
 
       if (!casos || casos.length === 0) {
+        box.className = 'historial-vacio';
+        box.style.cssText = 'border-top:1px solid var(--border-soft); min-height:250px;';
         box.innerHTML = `
-          <div class="historial-vacio">
-            <i class="fas fa-folder-open fa-3x" style="opacity:0.2; margin-bottom:15px;"></i>
-            <p>Sin gestiones previas registradas.</p>
-          </div>`;
+          <i class="fas fa-folder-open fa-3x" style="opacity:0.2; margin-bottom:15px;"></i>
+          <p>Sin gestiones previas registradas.</p>`;
         return;
       }
 
+      // CLAVE: Quitar clase historial-vacio y resetear estilos del contenedor
+      box.className = '';
+      box.style.cssText = 'border-top:1px solid var(--border-soft); min-height:250px; display:flex; flex-direction:column; width:100%;';
+
       const COLORES_ESTADO = {
-        'PENDIENTE':  { c: 'var(--warning)',   bg: 'var(--warning-bg)',    icon: 'fa-clock' },
-        'ASIGNADO':   { c: 'var(--primary)',   bg: 'var(--primary-light)', icon: 'fa-user-check' },
-        'EN PROCESO': { c: 'var(--success)',   bg: 'var(--success-bg)',    icon: 'fa-play-circle' },
-        'DERIVADO':   { c: 'var(--def-brown)', bg: '#f3f0ed',             icon: 'fa-share' },
-        'FINALIZADO': { c: 'var(--success)',   bg: 'var(--success-bg)',    icon: 'fa-check-double' }
+        'PENDIENTE':  { c: 'var(--warning)',    bg: 'var(--warning-bg)',    icon: 'fa-clock' },
+        'ASIGNADO':   { c: 'var(--primary)',    bg: 'var(--primary-light)', icon: 'fa-user-check' },
+        'EN PROCESO': { c: 'var(--success)',    bg: 'var(--success-bg)',    icon: 'fa-play-circle' },
+        'DERIVADO':   { c: 'var(--def-brown)',  bg: '#f3f0ed',             icon: 'fa-share' },
+        'FINALIZADO': { c: 'var(--success)',    bg: 'var(--success-bg)',    icon: 'fa-check-double' }
       };
 
       box.innerHTML = `
-        <div style="padding:8px 16px; font-weight:700; color:var(--text-muted);
+        <div style="padding:10px 20px; font-weight:700; color:var(--text-muted);
                     font-size:0.72rem; text-transform:uppercase;
                     border-bottom:1px solid var(--border-soft); background:var(--bg-app);
                     letter-spacing:0.5px;">
           Haga clic sobre un registro para abrir la ficha técnica
         </div>
-        <div style="display:flex; flex-direction:column; padding:12px 16px; gap:10px;">
+        <div style="display:flex; flex-direction:column; padding:14px 20px; gap:10px; width:100%;">
       ` + casos.map(c => {
         const est = c.estado.toUpperCase().trim();
         const { c: cE, bg: bgE, icon: iE } = COLORES_ESTADO[est] || { c: '#64748b', bg: '#f1f5f9', icon: 'fa-circle' };
@@ -281,7 +286,7 @@
         return `
           <div onclick="ATC_App.estadoNuevaRecepcion.idCasoDuplicadoCache='${c.id}'; ATC_App.irACasoDuplicado();"
                style="background:var(--bg-surface); border:1px solid var(--border-soft);
-                      border-radius:12px; padding:0; cursor:pointer;
+                      border-radius:12px; padding:0; cursor:pointer; width:100%;
                       transition:all 0.2s; box-shadow:var(--shadow-sm);
                       overflow:hidden; display:flex;"
                onmouseover="this.style.transform='translateY(-1px)'; this.style.boxShadow='var(--shadow-md)'"
@@ -289,31 +294,33 @@
 
             <div style="width:4px; flex-shrink:0; background:${cE};"></div>
 
-            <div style="flex:1; padding:12px 14px; display:grid;
-                        grid-template-columns:1fr auto; gap:4px 10px; align-items:start;">
+            <div style="flex:1; padding:12px 16px; display:grid;
+                        grid-template-columns:1fr auto; gap:4px 12px; align-items:start;
+                        min-width:0;">
 
-              <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
-                <span style="font-family:monospace; font-size:0.78rem; font-weight:700; color:${cE};">
+              <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; min-width:0;">
+                <span style="font-family:monospace; font-size:0.8rem; font-weight:700; color:${cE};">
                   #${c.id.substring(0,8).toUpperCase()}
                 </span>
-                <span style="font-size:0.73rem; color:var(--text-muted);">
+                <span style="font-size:0.75rem; color:var(--text-muted);">
                   ${c.fecha} · ${c.hora} hs
                 </span>
               </div>
 
-              <div style="display:flex; align-items:center; gap:4px; padding:3px 8px;
-                          border-radius:12px; font-size:0.68rem; font-weight:700;
-                          text-transform:uppercase; background:${bgE}; color:${cE}; white-space:nowrap;">
-                <i class="fas ${iE}" style="font-size:0.58rem;"></i>
+              <div style="display:flex; align-items:center; gap:4px; padding:3px 10px;
+                          border-radius:14px; font-size:0.7rem; font-weight:700;
+                          text-transform:uppercase; background:${bgE}; color:${cE};
+                          white-space:nowrap; justify-self:end;">
+                <i class="fas ${iE}" style="font-size:0.6rem;"></i>
                 ${est}
               </div>
 
-              <div style="grid-column:1/-1; display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
-                <span style="font-size:0.73rem; font-weight:700; color:var(--warning);">${c.categoria}</span>
+              <div style="grid-column:1/-1; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                <span style="font-size:0.75rem; font-weight:700; color:var(--warning);">${c.categoria}</span>
                 ${expTag}
-                <span style="font-size:0.73rem; color:var(--text-muted);">
-                  <i class="fas fa-building" style="opacity:0.5; font-size:0.65rem;"></i> ${c.area}
-                </span>
+                ${c.area && c.area !== 'Sin asignar'
+                  ? '<span style="font-size:0.75rem; color:var(--text-muted); display:inline-flex; align-items:center; gap:3px;"><i class="fas fa-building" style="opacity:0.5; font-size:0.65rem;"></i> ' + c.area + '</span>'
+                  : '<span style="font-size:0.75rem; color:var(--text-muted); font-style:italic;">Sin asignar</span>'}
               </div>
             </div>
           </div>`;
