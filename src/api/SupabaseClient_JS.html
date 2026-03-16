@@ -1,0 +1,188 @@
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script>
+  /**
+   * ========================================================================
+   * SupabaseClient_JS.html
+   * PROYECTO: Portal de Gestión - Defensoría del Pueblo
+   * ========================================================================
+   * Cliente Supabase para comunicación directa desde el navegador.
+   * Usa la anon key (NO service_role) — la seguridad la da RLS.
+   *
+   * IMPORTANTE: Este archivo debe cargarse PRIMERO en Layout_Main.html,
+   * antes de AppState_JS y todos los demás scripts.
+   *
+   * CONFIGURACIÓN:
+   *   Reemplazar SUPABASE_URL y SUPABASE_ANON_KEY con los valores
+   *   del dashboard de Supabase → Settings → API.
+   * ========================================================================
+   */
+
+  // ─── CONFIGURACIÓN ───
+  // NOTA: La anon key es PÚBLICA y segura de exponer en el frontend.
+  // La seguridad real está en las RLS policies de la base de datos.
+  const SUPABASE_URL      = 'https://qgegablqfspqczxygwvf.supabase.co';
+  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFnZWdhYmxxZnNwcWN6eHlnd3ZmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIzODY3NDQsImV4cCI6MjA4Nzk2Mjc0NH0.5vFy9sEnT0ThEeL43_gbZS71PJW30D6k_cYnmfsoH4s';  // ← Settings → API → anon public
+
+  // ─── INICIALIZACIÓN ───
+  const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  /**
+   * ========================================================================
+   * DB — Capa de acceso a datos (reemplaza google.script.run)
+   * ========================================================================
+   * Uso:
+   *   const { data, error } = await DB.from('vw_bandeja_casos').select('*');
+   *   const { data, error } = await DB.rpc('obtener_perfil_agente');
+   *
+   * El objeto DB es un wrapper fino sobre supabase-js que:
+   *   1. Expone .from() y .rpc() para queries directas
+   *   2. Maneja auth (login, logout, sesión)
+   *   3. Provee helpers para las operaciones más comunes
+   *   4. Centraliza el manejo de errores
+   * ========================================================================
+   */
+  const DB = {
+
+    // ─── Acceso directo a supabase-js ───
+    from: (tabla) => supabase.from(tabla),
+    rpc:  (fn, params) => supabase.rpc(fn, params),
+
+    // ═════════════════════════════════════
+    // AUTH — Login / Logout / Sesión
+    // ═════════════════════════════════════
+
+    /**
+     * Login con DNI y password.
+     * Traduce DNI → email sintético para Supabase Auth.
+     */
+    login: async function(dni, password) {
+      const email = dni.trim() + '@defensoria.local';
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: email,
+        password: password
+      });
+      if (error) return { success: false, message: error.message };
+
+      // Obtener perfil completo del agente (permisos, área, etc.)
+      const { data: perfil, error: perfilError } = await supabase.rpc('obtener_perfil_agente');
+      if (perfilError) return { success: false, message: perfilError.message };
+
+      // Parsear: la RPC devuelve JSON, puede venir como string u objeto
+      const p = typeof perfil === 'string' ? JSON.parse(perfil) : perfil;
+      if (!p.success) return { success: false, message: p.message };
+
+      return { success: true, user: p };
+    },
+
+    /**
+     * Cerrar sesión
+     */
+    logout: async function() {
+      await supabase.auth.signOut();
+    },
+
+    /**
+     * Obtener sesión activa (si existe)
+     */
+    getSession: async function() {
+      const { data: { session } } = await supabase.auth.getSession();
+      return session;
+    },
+
+    /**
+     * Verificar si hay sesión válida y obtener perfil
+     */
+    verificarAuth: async function() {
+      const session = await this.getSession();
+      if (!session) return null;
+
+      const { data: perfil, error } = await supabase.rpc('obtener_perfil_agente');
+      if (error) return null;
+
+      const p = typeof perfil === 'string' ? JSON.parse(perfil) : perfil;
+      return p.success ? p : null;
+    },
+
+    // ═════════════════════════════════════
+    // QUERIES — Helpers para operaciones comunes
+    // ═════════════════════════════════════
+
+    /**
+     * Fetch paginado con conteo (reemplaza supabaseFetch con returnCount)
+     */
+    fetchPaginado: async function(vista, query = {}) {
+      let q = supabase.from(vista).select(query.select || '*', { count: 'exact' });
+
+      if (query.filters)  query.filters.forEach(f => { q = q.filter(f.col, f.op, f.val); });
+      if (query.order)    q = q.order(query.order.col, { ascending: query.order.asc ?? false });
+      if (query.limit)    q = q.limit(query.limit);
+      if (query.offset)   q = q.range(query.offset, query.offset + (query.limit || 20) - 1);
+      if (query.ilike)    Object.entries(query.ilike).forEach(([col, val]) => { q = q.ilike(col, val); });
+      if (query.eq)       Object.entries(query.eq).forEach(([col, val]) => { q = q.eq(col, val); });
+
+      const { data, count, error } = await q;
+      if (error) throw new Error(error.message);
+      return { data: data || [], count: count || 0 };
+    },
+
+    /**
+     * Insert con retorno del registro
+     */
+    insert: async function(tabla, payload) {
+      const { data, error } = await supabase.from(tabla).insert(payload).select();
+      if (error) throw new Error(error.message);
+      return data;
+    },
+
+    /**
+     * Update por ID
+     */
+    update: async function(tabla, id, payload) {
+      const { data, error } = await supabase.from(tabla).update(payload).eq('id', id).select();
+      if (error) throw new Error(error.message);
+      return data;
+    },
+
+    /**
+     * Soft-delete via RPC
+     */
+    softDelete: async function(tabla, registroId, agenteId) {
+      const { data, error } = await supabase.rpc('soft_delete', {
+        p_tabla: tabla,
+        p_registro_id: registroId,
+        p_agente_id: agenteId
+      });
+      if (error) throw new Error(error.message);
+      return typeof data === 'string' ? JSON.parse(data) : data;
+    },
+
+    // ═════════════════════════════════════
+    // REALTIME — Subscripciones
+    // ═════════════════════════════════════
+
+    /**
+     * Suscribirse a cambios en una tabla (reemplaza polling de 30s)
+     * Retorna el channel para poder hacer .unsubscribe() después.
+     *
+     * Uso:
+     *   const channel = DB.subscribe('recepciones', 'INSERT', (payload) => {
+     *     console.log('Nuevo caso:', payload.new);
+     *   });
+     *   // Para desuscribirse:
+     *   channel.unsubscribe();
+     */
+    subscribe: function(tabla, evento, callback) {
+      return supabase
+        .channel(`public:${tabla}`)
+        .on('postgres_changes',
+          { event: evento, schema: 'public', table: tabla },
+          callback
+        )
+        .subscribe();
+    }
+
+  };
+
+  // Hacer DB disponible globalmente
+  window.DB = DB;
+</script>

@@ -7,18 +7,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <?!= include('src/ui/css/Styles_Global'); ?>
-  <style>
-    @keyframes pulseLogo {
-      0%   { transform: scale(1);    opacity: 1;   }
-      50%  { transform: scale(1.05); opacity: 0.8; }
-      100% { transform: scale(1);    opacity: 1;   }
-    }
-    #panel-notis-body::-webkit-scrollbar       { width: 6px; }
-    #panel-notis-body::-webkit-scrollbar-track { background: transparent; }
-    #panel-notis-body::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
-    #panel-notis-body::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-  </style>
-</head>
+    </style>
+    <!-- Supabase JS Client (CDN) — DEBE ir en el <head> -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  </head>
 <body class="modo-login">
 
   <!-- =====================================================
@@ -250,14 +242,15 @@
        Orden estricto: cada archivo depende de los anteriores.
        No modificar el orden.
        ===================================================== -->
-  <?!= include('src/ui/shared/AppState_JS'); ?>
-  <?!= include('src/ui/shared/Core_JS'); ?>
-  <?!= include('src/ui/shared/Notifications_JS'); ?>
-  <?!= include('src/ui/shared/Sidebar_JS'); ?>
-  <?!= include('src/ui/shared/Router_JS'); ?>
-  <?!= include('src/ui/shared/Session_JS'); ?>
-  <?!= include('src/ui/shared/Main_JS'); ?>
-
+    <?!= include('src/api/SupabaseClient_JS'); ?>
+    <?!= include('src/ui/shared/AppState_JS'); ?>
+    <?!= include('src/ui/shared/Core_JS'); ?>
+    <?!= include('src/ui/shared/Notifications_JS'); ?>
+    <?!= include('src/ui/shared/Sidebar_JS'); ?>
+    <?!= include('src/ui/shared/Router_JS'); ?>
+    <?!= include('src/ui/shared/Session_JS'); ?>
+    <?!= include('src/ui/shared/Main_JS'); ?>
+  
   <!-- =====================================================
        SCRIPTS — AUTH
        ===================================================== -->

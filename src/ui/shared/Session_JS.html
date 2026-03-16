@@ -1,34 +1,51 @@
 <script>
   /**
    * ========================================================================
-   * Session_JS.html
+   * Session_JS.html — V2.1
    * PROYECTO: Portal de Gestión - Defensoría del Pueblo
-   * RESPONSABILIDAD: Ciclo de vida completo de la sesión del usuario.
+   * ========================================================================
+   * CAMBIO: Usa Supabase Auth para verificar sesión.
+   *   - Si hay JWT válido → obtiene perfil via RPC + carga diccionarios directo
+   *   - Si no hay JWT → muestra login
+   *   - El boot ya NO pasa por google.script.run → elimina el bottleneck de GAS
+   *   - Notificaciones via Realtime (websockets) en vez de polling 30s
    * ========================================================================
    */
 
-  function verificarSesion() {
+  async function verificarSesion() {
     const preloader = document.getElementById('preloader-global');
     if (preloader) preloader.style.display = 'none';
 
-    const sesion = Memoria.leer('sesionDefensoria');
+    try {
+      // 1. Verificar si hay sesión JWT válida en Supabase
+      const perfil = await DB.verificarAuth();
 
-    if (sesion && sesion.idAgente) {
-      window.USUARIO_ACTUAL = sesion;
-      document.body.classList.remove('modo-login');
+      if (perfil) {
+        // Sesión válida — hidratar estado
+        window.USUARIO_ACTUAL = perfil;
+        Memoria.guardar('sesionDefensoria', perfil);
 
-      const topbar   = document.getElementById('topbar');
-      const nombreEl = document.getElementById('nombre-usuario-topbar');
-      if (topbar)   topbar.classList.remove('hidden');
-      if (nombreEl) nombreEl.innerText = window.USUARIO_ACTUAL.nombre;
+        document.body.classList.remove('modo-login');
+        const topbar   = document.getElementById('topbar');
+        const nombreEl = document.getElementById('nombre-usuario-topbar');
+        if (topbar)   topbar.classList.remove('hidden');
+        if (nombreEl) nombreEl.innerText = perfil.nombre;
 
-      arrancarEntornoGlobal(sesion);
-    } else {
+        await arrancarEntornoGlobal(perfil);
+      } else {
+        // Sin sesión → limpiar y mostrar login
+        Memoria.borrar('sesionDefensoria');
+        window.USUARIO_ACTUAL = null;
+        _mostrarPantallaLogin();
+      }
+    } catch (err) {
+      console.error('[Session] Error verificando auth:', err);
+      Memoria.borrar('sesionDefensoria');
       _mostrarPantallaLogin();
     }
   }
 
-  function arrancarEntornoGlobal(usuario) {
+  async function arrancarEntornoGlobal(usuario) {
     document.querySelectorAll('.view-container').forEach(v => v.classList.add('hidden'));
 
     const contenedor = document.getElementById('contenedor-principal');
@@ -45,59 +62,151 @@
       </div>`;
     if (contenedor) contenedor.appendChild(spinner);
 
-    google.script.run
-      .withSuccessHandler(res => {
-        const spinnerEl = document.getElementById('spinner-arranque');
-        if (spinnerEl) spinnerEl.remove();
+    try {
+      // Cargar diccionarios directamente desde Supabase (sin pasar por GAS)
+      const [areasRes, agentesRes] = await Promise.all([
+        DB.from('areas').select('id,nombre').order('nombre'),
+        DB.from('agentes').select('id,nombre,apellido').eq('estado', true).order('apellido')
+      ]);
 
-        if (res.success) {
-          Memoria.guardar('diccionariosGlobales', res.data.diccionariosGlobales);
-          Portal_Core.iniciarNotificaciones(
-            res.data.notificaciones,
-            res.data.totalNotificaciones
-          );
-          cargarModulo('PortalHome');
-        } else {
-          Portal_Core.mostrarToast('error', 'Error de Arranque',
-            'No se pudo iniciar el sistema: ' + res.message);
-        }
-      })
-      .withFailureHandler(err => {
-        const spinnerEl = document.getElementById('spinner-arranque');
-        if (spinnerEl) spinnerEl.innerHTML = `
-          <div style="color:var(--danger); padding:20px; text-align:center;">
-            <b>Fallo de conexión:</b> ${err.message}
-          </div>`;
-      })
-      .bootSystemBackend(usuario.idAgente, usuario.idArea);
+      const diccionarios = {
+        areas:   areasRes.data || [],
+        agentes: agentesRes.data || []
+      };
+      Memoria.guardar('diccionariosGlobales', diccionarios);
+
+      // Cargar notificaciones iniciales
+      const notis = await _cargarNotificacionesDirecto(usuario);
+
+      const spinnerEl = document.getElementById('spinner-arranque');
+      if (spinnerEl) spinnerEl.remove();
+
+      Portal_Core.iniciarNotificaciones(notis.lista, notis.total);
+
+      // Iniciar polling directo a Supabase para notificaciones
+      _iniciarPollingNotificaciones(perfil);
+
+      cargarModulo('PortalHome');
+
+    } catch (err) {
+      const spinnerEl = document.getElementById('spinner-arranque');
+      if (spinnerEl) spinnerEl.innerHTML = `
+        <div style="color:var(--danger); padding:20px; text-align:center;">
+          <b>Fallo de conexión:</b> ${err.message}
+        </div>`;
+    }
   }
 
-  function cerrarSesion() {
-    // 1. Limpiar sesión y usuario
+  /**
+   * Carga notificaciones directamente desde Supabase
+   */
+  async function _cargarNotificacionesDirecto(usuario) {
+    try {
+      const qMios = await DB.from('vw_bandeja_casos')
+        .select('recepcion_id, categoria, fecha_inicio', { count: 'exact' })
+        .eq('agente_responsable_id', usuario.idAgente)
+        .eq('estado_id', 1)
+        .order('fecha_inicio', { ascending: false })
+        .limit(5);
+
+      const qArea = await DB.from('vw_bandeja_casos')
+        .select('recepcion_id, categoria, fecha_inicio', { count: 'exact' })
+        .eq('area_destino_id', usuario.idArea)
+        .eq('estado_id', 4)
+        .order('fecha_inicio', { ascending: false })
+        .limit(5);
+
+      let lista = [];
+      const totalMios = qMios.count || 0;
+      const totalArea = qArea.count || 0;
+
+      (qMios.data || []).forEach(r => lista.push({
+        id: r.recepcion_id, tipo: 'personal', titulo: r.categoria || 'Sin categoría',
+        fecha: r.fecha_inicio ? new Date(r.fecha_inicio).toLocaleString('es-AR') : 'S/D',
+        mensaje: 'Asignado a ti. Requiere inicio de gestión.'
+      }));
+
+      (qArea.data || []).forEach(r => lista.push({
+        id: r.recepcion_id, tipo: 'area', titulo: r.categoria || 'Sin categoría',
+        fecha: r.fecha_inicio ? new Date(r.fecha_inicio).toLocaleString('es-AR') : 'S/D',
+        mensaje: 'Pendiente en tu área. Sin agente asignado.'
+      }));
+
+      return { lista, total: totalMios + totalArea };
+    } catch (e) {
+      return { lista: [], total: 0 };
+    }
+  }
+
+  /**
+   * Polling directo a Supabase (sin pasar por GAS)
+   * Consulta cada 30s — no consume cuotas de UrlFetchApp.
+   * Cuando se habilite Realtime (plan Pro), reemplazar por DB.subscribe().
+   */
+  let _pollingNotisTimer = null;
+
+  function _iniciarPollingNotificaciones(usuario) {
+    if (_pollingNotisTimer) clearInterval(_pollingNotisTimer);
+
+    _pollingNotisTimer = setInterval(async () => {
+      if (!window.USUARIO_ACTUAL) return;
+      try {
+        const totalAnterior = Portal_Core.estadoTotalNotis || 0;
+        const notis = await _cargarNotificacionesDirecto(usuario);
+
+        Portal_Core.estadoNotificaciones = notis.lista;
+        Portal_Core.estadoTotalNotis     = notis.total;
+        Portal_Core.renderizarBadge();
+
+        if (notis.total > totalAnterior) {
+          Portal_Core.mostrarToast('info', 'Actualización de Bandeja',
+            `Tenés ${notis.total} casos que requieren atención.`, 8000, false);
+          Portal_Core.reproducirSonido('campana');
+        }
+
+        const panel = document.getElementById('panel-notificaciones');
+        if (panel && !panel.classList.contains('hidden')) {
+          Portal_Core.renderizarPanelNotificaciones();
+        }
+      } catch (e) {
+        console.warn('[Polling] Error consultando notificaciones:', e.message);
+      }
+    }, 30000);
+  }
+
+  async function cerrarSesion() {
+    // 1. Cerrar sesión en Supabase Auth
+    await DB.logout();
+
+    // 2. Limpiar estado local
     Memoria.borrar('sesionDefensoria');
+    Memoria.borrar('diccionariosGlobales');
+    Memoria.borrar('diccionariosATC');
+    Memoria.borrar('diccionariosINV');
     window.USUARIO_ACTUAL = null;
 
-    // 2. Detener timer de notificaciones
+    // 3. Detener polling de notificaciones
+    if (_pollingNotisTimer) {
+      clearInterval(_pollingNotisTimer);
+      _pollingNotisTimer = null;
+    }
+
+    // 4. Detener timers legacy (por si quedaron)
     if (Portal_Core.temporizadorNotificaciones) {
       clearInterval(Portal_Core.temporizadorNotificaciones);
       Portal_Core.temporizadorNotificaciones = null;
     }
-
-    // 3. Detener timer de bandeja ATC si está corriendo
     if (window.ATC_App && ATC_App.temporizadores && ATC_App.temporizadores.bandeja) {
       clearInterval(ATC_App.temporizadores.bandeja);
       ATC_App.temporizadores.bandeja = null;
     }
-
-    // 4. Cerrar popup QR del inventario si estaba abierto
     if (window.INV_App && typeof INV_App.detenerCamaraEnVivo === 'function') {
       INV_App.detenerCamaraEnVivo();
     }
 
-    // 5. Limpiar contenido visible
+    // 5. Limpiar UI
     const dashboardContent = document.getElementById('dashboard-content');
     if (dashboardContent) dashboardContent.innerHTML = '';
-
     const formLogin = document.getElementById('form-login');
     if (formLogin) formLogin.reset();
 
@@ -106,13 +215,10 @@
 
   function _mostrarPantallaLogin() {
     document.body.classList.add('modo-login');
-
     const sidebar = document.getElementById('sidebar');
     const topbar  = document.getElementById('topbar');
     if (sidebar) sidebar.classList.add('hidden');
     if (topbar)  topbar.classList.add('hidden');
-
     cargarModulo('Login');
   }
-
 </script>

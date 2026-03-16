@@ -1,53 +1,48 @@
 <script>
   /**
    * ========================================================================
-   * JS_SYS_Login.html
-   * Lógica de autenticación del Agente
+   * Login_JS.html — V2.1
+   * PROYECTO: Portal de Gestión - Defensoría del Pueblo
+   * ========================================================================
+   * CAMBIO: usa DB.login() (supabase-js directo) en vez de google.script.run
+   * Login sigue siendo DNI + password — DB traduce a email sintético.
    * ========================================================================
    */
 
-  function procesarLogin(e) {
+  async function procesarLogin(e) {
     e.preventDefault();
-    const dni = document.getElementById('login-dni').value.trim();
+    const dni  = document.getElementById('login-dni').value.trim();
     const pass = document.getElementById('login-pass').value;
-    const btn = document.getElementById('btn-login');
-    const errDiv = document.getElementById('login-error');
+    const btn  = document.getElementById('btn-login');
+    const errDiv  = document.getElementById('login-error');
     const errText = document.getElementById('login-error-text');
 
-    // Estado de carga
-    btn.disabled = true;
+    btn.disabled  = true;
     btn.innerHTML = '<i class="fas fa-circle-notch spinner"></i> Validando Agente...';
     errDiv.classList.add('hidden');
 
-    google.script.run
-      .withSuccessHandler(res => {
-        try {
-          if (res.success) {
-            Memoria.guardar('sesionDefensoria', res.user);
-            verificarSesion();
-          } else {
-            errText.innerText = res.message || "Credenciales inválidas";
-            errDiv.classList.remove('hidden');
-            btn.disabled = false;
-            btn.innerHTML = 'Ingresar al Sistema <i class="fas fa-arrow-right" style="margin-left: 5px;"></i>';
-          }
-        } catch (errorFrontend) {
-          errText.innerText = "Error interno: " + errorFrontend.message;
-          errDiv.classList.remove('hidden');
-          btn.disabled = false;
-          btn.innerHTML = 'Ingresar al Sistema <i class="fas fa-arrow-right" style="margin-left: 5px;"></i>';
-        }
-      })
-      .withFailureHandler(err => {
-        errText.innerText = "Error de enlace con el servidor: " + err.message;
+    try {
+      const res = await DB.login(dni, pass);
+
+      if (res.success) {
+        // Guardar perfil en memoria (compatibilidad con USUARIO_ACTUAL)
+        Memoria.guardar('sesionDefensoria', res.user);
+        verificarSesion();
+      } else {
+        errText.innerText = res.message || 'Credenciales inválidas';
         errDiv.classList.remove('hidden');
-        btn.disabled = false;
-        btn.innerHTML = 'Ingresar al Sistema <i class="fas fa-arrow-right" style="margin-left: 5px;"></i>';
-      })
-      .validarCredenciales(dni, pass);
+        btn.disabled  = false;
+        btn.innerHTML = 'Ingresar al Sistema <i class="fas fa-arrow-right" style="margin-left:5px;"></i>';
+      }
+    } catch (err) {
+      errText.innerText = 'Error de conexión: ' + err.message;
+      errDiv.classList.remove('hidden');
+      btn.disabled  = false;
+      btn.innerHTML = 'Ingresar al Sistema <i class="fas fa-arrow-right" style="margin-left:5px;"></i>';
+    }
   }
 
   function solicitarRecuperacion() {
-    alert("Para blanquear su clave, por favor contacte al Administrador de Sistemas de la Defensoría.");
+    alert('Para blanquear su clave, por favor contacte al Administrador de Sistemas de la Defensoría.');
   }
 </script>
