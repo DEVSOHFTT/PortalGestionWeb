@@ -1,108 +1,234 @@
-<div style="padding:20px; max-width:1100px; margin:0 auto;">
+<style>
+  .adm-stats-row { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:1.25rem; }
+  .adm-stat-card { background:var(--bg-surface); border:1px solid var(--border-soft); border-radius:10px; padding:12px 16px; display:flex; align-items:center; gap:10px; }
+  .adm-stat-icon { width:36px; height:36px; border-radius:8px; display:flex; align-items:center; justify-content:center; flex-shrink:0; font-size:0.9rem; }
+  .adm-stat-icon.p { background:var(--primary-light); color:var(--primary); }
+  .adm-stat-icon.g { background:#EAF3DE; color:#3B6D11; }
+  .adm-stat-icon.r { background:#FCEBEB; color:#A32D2D; }
+  .adm-stat-label { font-size:0.7rem; color:var(--text-muted); font-weight:700; text-transform:uppercase; letter-spacing:0.04em; }
+  .adm-stat-val { font-size:1.25rem; font-weight:800; color:var(--text-main); }
 
-  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:25px; flex-wrap:wrap; gap:12px;">
-    <div>
-      <h2 style="font-size:1.3rem; font-weight:800; color:var(--text-main); margin:0;">
-        <i class="fas fa-id-badge" style="color:var(--primary); margin-right:8px;"></i>
-        Gestión de Agentes
-      </h2>
-      <p style="font-size:0.8rem; color:var(--text-muted); margin-top:4px;">
-        Alta, modificación y baja lógica del personal.
-      </p>
+  .adm-toolbar { display:flex; align-items:center; gap:8px; margin-bottom:1rem; flex-wrap:wrap; }
+  .adm-search-wrap { flex:1; min-width:150px; position:relative; }
+  .adm-search-wrap input { width:100%; padding:8px 10px 8px 32px; border:1px solid var(--border-soft); border-radius:8px; font-size:0.82rem; background:var(--bg-surface); color:var(--text-main); outline:none; transition:0.2s; }
+  .adm-search-wrap input:focus { border-color:var(--primary); box-shadow:0 0 0 3px var(--primary-light); }
+  .adm-search-icon { position:absolute; left:9px; top:50%; transform:translateY(-50%); color:var(--text-muted); font-size:0.75rem; pointer-events:none; }
+
+  .adm-ag-card { display:flex; align-items:center; gap:12px; padding:12px 16px; border:1px solid var(--border-soft); border-radius:12px; margin-bottom:8px; background:var(--bg-surface); transition:0.15s; }
+  .adm-ag-card:hover { box-shadow:var(--shadow-sm); border-color:var(--border-hard); }
+  .adm-ag-avatar { width:40px; height:40px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:0.82rem; flex-shrink:0; }
+  .adm-ag-name { font-weight:700; color:var(--text-main); font-size:0.88rem; }
+  .adm-ag-meta { display:flex; align-items:center; gap:8px; margin-top:3px; flex-wrap:wrap; }
+  .adm-ag-meta span { font-size:0.75rem; color:var(--text-muted); }
+  .adm-ag-chip { font-size:0.7rem; padding:2px 8px; border-radius:20px; font-weight:700; }
+  .adm-ag-chip.activo { background:#EAF3DE; color:#3B6D11; }
+  .adm-ag-chip.inactivo { background:#FCEBEB; color:#A32D2D; }
+  .adm-ag-chip.area { background:var(--primary-light); color:var(--primary); }
+
+  /* TABS del modal */
+  .adm-tab-nav { display:flex; gap:2px; border-bottom:1px solid var(--border-soft); margin-bottom:1.1rem; }
+  .adm-tab-btn { padding:7px 16px; border:none; background:transparent; cursor:pointer; font-size:0.82rem; font-weight:600; color:var(--text-muted); border-bottom:2px solid transparent; margin-bottom:-1px; transition:0.12s; }
+  .adm-tab-btn.active { color:var(--primary); border-bottom-color:var(--primary); }
+  .adm-tab-panel { display:none; }
+  .adm-tab-panel.active { display:block; }
+
+  /* Sección dentro del tab */
+  .adm-section-label {
+    font-size:0.68rem; font-weight:800; text-transform:uppercase; letter-spacing:0.06em;
+    color:var(--primary); margin:1rem 0 8px; padding-bottom:5px;
+    border-bottom:1px solid var(--border-soft);
+  }
+
+  /* Toggle discapacidad */
+  .adm-toggle-row {
+    display:flex; align-items:center; gap:10px;
+    padding:10px 12px; border:1px solid var(--border-soft); border-radius:8px;
+    cursor:pointer; background:var(--bg-app); transition:0.15s; grid-column:span 2;
+  }
+  .adm-toggle-row:hover { border-color:var(--primary); }
+  .adm-toggle-row input[type=checkbox] { width:16px; height:16px; accent-color:var(--primary); flex-shrink:0; cursor:pointer; }
+  .adm-toggle-row label { font-size:0.85rem; font-weight:600; color:var(--text-main); cursor:pointer; margin:0; }
+</style>
+
+<div style="padding:16px; max-width:1100px; margin:0 auto;">
+
+  <div class="adm-stats-row">
+    <div class="adm-stat-card">
+      <div class="adm-stat-icon p"><i class="fas fa-users"></i></div>
+      <div><div class="adm-stat-label">Total</div><div class="adm-stat-val" id="adm-ag-stat-total">—</div></div>
     </div>
-    <div style="display:flex; gap:10px; align-items:center;">
-      <select id="adm-ag-filtro-area" class="form-input" style="max-width:200px; font-size:0.82rem;" onchange="AdminAgentes.cargar()">
-        <option value="">Todas las Áreas</option>
-      </select>
-      <select id="adm-ag-filtro-estado" class="form-input" style="max-width:140px; font-size:0.82rem;" onchange="AdminAgentes.cargar()">
-        <option value="">Todos</option>
-        <option value="true" selected>Activos</option>
-        <option value="false">Inactivos</option>
-      </select>
-      <button class="btn btn-primary" onclick="AdminAgentes.abrirModal()">
-        <i class="fas fa-user-plus" style="margin-right:6px;"></i> Nuevo Agente
-      </button>
+    <div class="adm-stat-card">
+      <div class="adm-stat-icon g"><i class="fas fa-user-check"></i></div>
+      <div><div class="adm-stat-label">Activos</div><div class="adm-stat-val" id="adm-ag-stat-activos">—</div></div>
     </div>
+    <div class="adm-stat-card">
+      <div class="adm-stat-icon r"><i class="fas fa-user-slash"></i></div>
+      <div><div class="adm-stat-label">Inactivos</div><div class="adm-stat-val" id="adm-ag-stat-inactivos">—</div></div>
+    </div>
+  </div>
+
+  <div class="adm-toolbar">
+    <div class="adm-search-wrap">
+      <i class="fas fa-search adm-search-icon"></i>
+      <input type="text" id="adm-ag-busqueda" placeholder="Buscar por nombre, DNI..." oninput="AdminAgentes._filtrarLocal()">
+    </div>
+    <select id="adm-ag-filtro-area" class="form-input" style="max-width:180px; font-size:0.82rem;" onchange="AdminAgentes.cargar()">
+      <option value="">Todas las áreas</option>
+    </select>
+    <select id="adm-ag-filtro-estado" class="form-input" style="max-width:130px; font-size:0.82rem;" onchange="AdminAgentes.cargar()">
+      <option value="">Todos</option>
+      <option value="true" selected>Activos</option>
+      <option value="false">Inactivos</option>
+    </select>
+    <button class="btn btn-primary" onclick="AdminAgentes.abrirModal()">
+      <i class="fas fa-user-plus" style="margin-right:5px;"></i> Nuevo agente
+    </button>
   </div>
 
   <div id="adm-ag-loader" style="text-align:center; padding:40px;">
     <i class="fas fa-circle-notch spinner fa-2x" style="color:var(--primary);"></i>
     <p style="margin-top:10px; color:var(--text-muted);">Cargando agentes...</p>
   </div>
-
   <div id="adm-ag-body"></div>
 </div>
 
-<!-- ============================================= MODAL ============================================= -->
+<!-- MODAL: movido a body en JS al abrirse -->
 <div id="modal-agente" class="modal-overlay hidden">
-  <div class="modal-box" style="max-width:700px; max-height:90vh; overflow-y:auto;">
+  <div class="modal-box" style="max-width:680px; max-height:92vh; overflow-y:auto;">
     <div class="modal-header">
       <span id="modal-ag-titulo"><i class="fas fa-user-plus" style="color:var(--primary)"></i> Nuevo Agente</span>
       <button class="btn-icono" style="border:none;" onclick="Portal_Core.cerrarModal('modal-agente')"><i class="fas fa-times"></i></button>
     </div>
     <input type="hidden" id="ag-id" value="">
 
-    <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px;">
-      <!-- Identificación -->
-      <div class="form-group"><label class="form-label">Apellido <span style="color:var(--danger)">*</span></label>
-        <input type="text" id="ag-apellido" class="form-input" required></div>
-      <div class="form-group"><label class="form-label">Nombre <span style="color:var(--danger)">*</span></label>
-        <input type="text" id="ag-nombre" class="form-input" required></div>
-      <div class="form-group"><label class="form-label">DNI <span style="color:var(--danger)">*</span></label>
-        <input type="text" id="ag-dni" class="form-input" maxlength="8" required></div>
-      <div class="form-group"><label class="form-label">CUIL <span style="color:var(--danger)">*</span></label>
-        <input type="text" id="ag-cuil" class="form-input" maxlength="13"></div>
-      <div class="form-group"><label class="form-label">Fecha Nacimiento</label>
-        <input type="date" id="ag-fecha-nac" class="form-input"></div>
-      <div class="form-group"><label class="form-label">Género</label>
-        <select id="ag-genero" class="form-input"></select></div>
-      <div class="form-group"><label class="form-label">Estado Civil</label>
-        <select id="ag-estado-civil" class="form-input"></select></div>
-      <div class="form-group"><label class="form-label">Hijos a Cargo</label>
-        <input type="number" id="ag-hijos" class="form-input" min="0" value="0"></div>
+    <div class="adm-tab-nav">
+      <button class="adm-tab-btn active" onclick="AdminAgentes._tab(0)">Personal</button>
+      <button class="adm-tab-btn" onclick="AdminAgentes._tab(1)">Contacto</button>
+      <button class="adm-tab-btn" onclick="AdminAgentes._tab(2)">Educación</button>
+      <button class="adm-tab-btn" onclick="AdminAgentes._tab(3)">Laboral</button>
+    </div>
 
-      <!-- Contacto -->
-      <div class="form-group"><label class="form-label">Teléfono</label>
-        <input type="text" id="ag-telefono" class="form-input"></div>
-      <div class="form-group"><label class="form-label">Email</label>
-        <input type="email" id="ag-email" class="form-input"></div>
-      <div class="form-group" style="grid-column:span 2;"><label class="form-label">Domicilio</label>
-        <input type="text" id="ag-domicilio" class="form-input"></div>
-
-      <!-- Estudios -->
-      <div class="form-group"><label class="form-label">Nivel de Estudio</label>
-        <select id="ag-nivel-estudio" class="form-input"></select></div>
-      <div class="form-group"><label class="form-label">Título Obtenido</label>
-        <input type="text" id="ag-titulo" class="form-input"></div>
-
-      <!-- Laboral -->
-      <div class="form-group"><label class="form-label">Delegación <span style="color:var(--danger)">*</span></label>
-        <select id="ag-delegacion" class="form-input"></select></div>
-      <div class="form-group"><label class="form-label">Área <span style="color:var(--danger)">*</span></label>
-        <select id="ag-area" class="form-input"></select></div>
-      <div class="form-group"><label class="form-label">Cargo</label>
-        <select id="ag-cargo" class="form-input"></select></div>
-      <div class="form-group"><label class="form-label">Modalidad</label>
-        <select id="ag-modalidad" class="form-input"></select></div>
-      <div class="form-group"><label class="form-label">Fecha Inicio SP</label>
-        <input type="date" id="ag-fecha-inicio" class="form-input"></div>
-      <div class="form-group"><label class="form-label">Vencimiento Contrato</label>
-        <input type="date" id="ag-fecha-venc" class="form-input"></div>
-
-      <!-- Discapacidad -->
-      <div class="form-group" style="grid-column:span 2;">
-        <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
-          <input type="checkbox" id="ag-discapacidad" onchange="document.getElementById('ag-discapacidad-nombre').classList.toggle('hidden', !this.checked)">
-          <span class="form-label" style="margin:0;">Registra Discapacidad</span>
-        </label>
-        <input type="text" id="ag-discapacidad-nombre" class="form-input hidden" placeholder="Especificar..." style="margin-top:8px;">
+    <!-- TAB 0: PERSONAL -->
+    <div class="adm-tab-panel active" id="ag-tab-0">
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+        <div class="form-group">
+          <label class="form-label">Apellido <span style="color:var(--danger)">*</span></label>
+          <input type="text" id="ag-apellido" class="form-input">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Nombre <span style="color:var(--danger)">*</span></label>
+          <input type="text" id="ag-nombre" class="form-input">
+        </div>
+        <div class="form-group">
+          <label class="form-label">DNI <span style="color:var(--danger)">*</span></label>
+          <input type="text" id="ag-dni" class="form-input" maxlength="8">
+        </div>
+        <div class="form-group">
+          <label class="form-label">CUIL <span style="color:var(--danger)">*</span></label>
+          <input type="text" id="ag-cuil" class="form-input" maxlength="13">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Fecha de nacimiento</label>
+          <input type="date" id="ag-fecha-nac" class="form-input">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Género</label>
+          <select id="ag-genero" class="form-input"></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Estado civil</label>
+          <select id="ag-estado-civil" class="form-input"></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Hijos a cargo</label>
+          <input type="number" id="ag-hijos" class="form-input" min="0" value="0">
+        </div>
+        <!-- Discapacidad — row completo bien alineado -->
+        <div class="adm-toggle-row" onclick="AdminAgentes._toggleDiscapacidad()">
+          <input type="checkbox" id="ag-discapacidad" onclick="event.stopPropagation(); AdminAgentes._toggleDiscapacidad()">
+          <label for="ag-discapacidad">Registra discapacidad</label>
+        </div>
+        <div class="form-group hidden" id="ag-disc-detalle" style="grid-column:span 2; margin-top:-4px;">
+          <label class="form-label">Descripción de la discapacidad</label>
+          <input type="text" id="ag-discapacidad-nombre" class="form-input" placeholder="Especificar...">
+        </div>
       </div>
     </div>
 
-    <div style="text-align:right; margin-top:20px; border-top:1px solid var(--border-soft); padding-top:15px;">
+    <!-- TAB 1: CONTACTO -->
+    <div class="adm-tab-panel" id="ag-tab-1">
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+        <div class="form-group">
+          <label class="form-label">Teléfono</label>
+          <input type="text" id="ag-telefono" class="form-input">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Email</label>
+          <input type="email" id="ag-email" class="form-input">
+        </div>
+        <div class="form-group" style="grid-column:span 2;">
+          <label class="form-label">Domicilio</label>
+          <input type="text" id="ag-domicilio" class="form-input">
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 2: EDUCACIÓN -->
+    <div class="adm-tab-panel" id="ag-tab-2">
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+        <div class="form-group">
+          <label class="form-label">Nivel de estudio</label>
+          <select id="ag-nivel-estudio" class="form-input"></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Título obtenido</label>
+          <input type="text" id="ag-titulo" class="form-input">
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 3: LABORAL -->
+    <div class="adm-tab-panel" id="ag-tab-3">
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+        <div class="form-group">
+          <label class="form-label">Delegación</label>
+          <select id="ag-delegacion" class="form-input"></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Área <span style="color:var(--danger)">*</span></label>
+          <select id="ag-area" class="form-input"></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Cargo</label>
+          <select id="ag-cargo" class="form-input"></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Modalidad de contratación</label>
+          <select id="ag-modalidad" class="form-input"></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Fecha inicio SP</label>
+          <input type="date" id="ag-fecha-inicio" class="form-input">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Vencimiento contrato</label>
+          <input type="date" id="ag-fecha-venc" class="form-input">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Hora de ingreso</label>
+          <input type="time" id="ag-hora-ingreso" class="form-input">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Horas laborales semanales</label>
+          <input type="number" id="ag-horas-laborales" class="form-input" min="0" max="48">
+        </div>
+      </div>
+    </div>
+
+    <div style="text-align:right; margin-top:18px; border-top:1px solid var(--border-soft); padding-top:14px; display:flex; justify-content:flex-end; gap:8px;">
       <button class="btn btn-outline" onclick="Portal_Core.cerrarModal('modal-agente')">Cancelar</button>
       <button class="btn btn-primary" id="btn-guardar-agente" onclick="AdminAgentes.guardar()">
-        <i class="fas fa-save" style="margin-right:6px;"></i> Guardar
+        <i class="fas fa-save" style="margin-right:5px;"></i> Guardar
       </button>
     </div>
   </div>

@@ -1,40 +1,127 @@
 <script>
   /**
-   * ========================================================================
-   * Admin_Usuarios_JS.html
-   * PROYECTO: Portal de Gestión - Defensoría del Pueblo
-   * RESPONSABILIDAD: Panel de gestión de usuarios del sistema.
-   *   - Solo accesible para tipo_usuario = 1 (Sistemas)
-   *   - Crear usuarios con Supabase Auth
-   *   - Asignar/editar permisos
-   *   - Resetear contraseñas
-   *   - Listar y desactivar usuarios
-   * ========================================================================
+   * Admin_Usuarios_JS — Portal de Gestión - Defensoría del Pueblo
    */
+
+  const _PERM_GROUPS = [
+    { key:'ACT',    label:'Actuaciones',   color:'#7c3aed' },
+    { key:'CASO',   label:'Casos',         color:'#059669' },
+    { key:'AGENTE', label:'Agentes',       color:'#3B6D11' },
+    { key:'USR',    label:'Usuarios',      color:'#2563eb' },
+    { key:'INV',    label:'Inventario',    color:'#d97706' },
+    { key:'CFG',    label:'Configuración', color:'#6b7280' },
+  ];
+
+  function _agruparPermisos(permisos) {
+    const grupos = {};
+    _PERM_GROUPS.forEach(g => { grupos[g.key] = { ...g, items: [] }; });
+    const otros = { key:'OTROS', label:'Otros', color:'#6b7280', items: [] };
+    permisos.forEach(p => {
+      const prefix = (p.clave_tecnica || '').split('_')[0];
+      if (grupos[prefix]) grupos[prefix].items.push(p);
+      else otros.items.push(p);
+    });
+    const result = Object.values(grupos).filter(g => g.items.length > 0);
+    if (otros.items.length > 0) result.push(otros);
+    return result;
+  }
+
+  /**
+   * Renderiza permisos con grid de 3 columnas: checkbox | código | descripción
+   */
+  function _renderizarPermisos(containerId, permisos, seleccionados, cssClass) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    const grupos = _agruparPermisos(permisos);
+
+    container.innerHTML = grupos.map(g => {
+      const checkedCount = g.items.filter(p => seleccionados.includes(p.id)).length;
+      const allChecked   = checkedCount === g.items.length;
+
+      const items = g.items.map(p => `
+        <div class="perm-item" onclick="_togglePermItem('${p.id}','${cssClass}','${containerId}')">
+          <input type="checkbox" id="perm-${p.id}" value="${p.id}" class="${cssClass}"
+                 ${seleccionados.includes(p.id) ? 'checked' : ''}
+                 onclick="event.stopPropagation(); _togglePermItem('${p.id}','${cssClass}','${containerId}',this)">
+          <span class="perm-code">${p.clave_tecnica}</span>
+          <span class="perm-desc">${p.nombre}</span>
+        </div>`).join('');
+
+      return `
+        <div class="perm-group" id="pgrp-${containerId}-${g.key}">
+          <div class="perm-group-hdr" onclick="_toggleGrupo('${containerId}','${g.key}')">
+            <span class="perm-group-title">
+              <span class="perm-group-dot" style="background:${g.color};"></span>
+              ${g.label}
+            </span>
+            <span class="perm-group-count" id="pcnt-${containerId}-${g.key}">${checkedCount}/${g.items.length}</span>
+            <button class="perm-group-toggle" id="ptgl-${containerId}-${g.key}"
+                    onclick="event.stopPropagation(); _toggleGrupoPermisos('${containerId}','${g.key}','${cssClass}')">
+              ${allChecked ? 'Quitar todos' : 'Marcar todos'}
+            </button>
+          </div>
+          <div class="perm-group-body" id="pbody-${containerId}-${g.key}">${items}</div>
+        </div>`;
+    }).join('');
+  }
+
+  function _togglePermItem(permId, cssClass, containerId, cb) {
+    const checkbox = cb || document.getElementById('perm-' + permId);
+    if (!cb && checkbox) checkbox.checked = !checkbox.checked;
+    _actualizarContadoresGrupo(containerId, cssClass);
+  }
+
+  function _toggleGrupo(containerId, key) {
+    const body = document.getElementById(`pbody-${containerId}-${key}`);
+    if (body) body.style.display = body.style.display === 'none' ? '' : 'none';
+  }
+
+  function _toggleGrupoPermisos(containerId, key, cssClass) {
+    const g = _PERM_GROUPS.find(x => x.key === key) || { items: [] };
+    const body = document.getElementById(`pbody-${containerId}-${key}`);
+    if (!body) return;
+    const checks = body.querySelectorAll(`.${cssClass}`);
+    const allChecked = Array.from(checks).every(c => c.checked);
+    checks.forEach(c => c.checked = !allChecked);
+    _actualizarContadoresGrupo(containerId, cssClass);
+  }
+
+  function _actualizarContadoresGrupo(containerId, cssClass) {
+    _PERM_GROUPS.forEach(g => {
+      const body    = document.getElementById(`pbody-${containerId}-${g.key}`);
+      const cntEl   = document.getElementById(`pcnt-${containerId}-${g.key}`);
+      const btEl    = document.getElementById(`ptgl-${containerId}-${g.key}`);
+      if (!body) return;
+      const checks  = body.querySelectorAll(`.${cssClass}`);
+      const total   = checks.length;
+      const checked = Array.from(checks).filter(c => c.checked).length;
+      if (cntEl) cntEl.textContent = `${checked}/${total}`;
+      if (btEl)  btEl.textContent  = checked === total ? 'Quitar todos' : 'Marcar todos';
+    });
+  }
+
+  // =========================================================
 
   window.AdminUsuarios = {
 
     _cache: null,
+    _todos: [],
 
-    // =========================================================
-    // INICIALIZACIÓN
-    // =========================================================
     iniciar: function() {
       document.getElementById('ruta-actual').innerText = 'Administración de Usuarios';
-
-      // Verificar permiso: solo tipo 1 (Sistemas)
       if (!window.USUARIO_ACTUAL || parseInt(window.USUARIO_ACTUAL.tipoUsuario) !== 1) {
-        Portal_Core.mostrarToast('error', 'Acceso Denegado', 'Solo usuarios de tipo Sistemas pueden acceder a este módulo.');
+        Portal_Core.mostrarToast('error', 'Acceso Denegado', 'Solo usuarios de tipo Sistemas pueden acceder.');
         cargarModulo('PortalHome');
         return;
       }
-
+      // Mover todos los modales al body para bloqueo global correcto
+      ['modal-crear-usuario','modal-reset-password','modal-editar-usuario'].forEach(id => {
+        const m = document.getElementById(id);
+        if (m && m.parentElement !== document.body) document.body.appendChild(m);
+      });
       this.cargarUsuarios();
     },
 
-    // =========================================================
-    // CARGAR LISTA DE USUARIOS
-    // =========================================================
     cargarUsuarios: function() {
       const loader = document.getElementById('admin-usr-loader');
       const tabla  = document.getElementById('admin-usr-tabla');
@@ -44,11 +131,9 @@
       google.script.run
         .withSuccessHandler(res => {
           if (loader) loader.classList.add('hidden');
-          if (!res.success) {
-            Portal_Core.mostrarToast('error', 'Error', res.message);
-            return;
-          }
-          this.renderizarTabla(res.data);
+          if (!res.success) { Portal_Core.mostrarToast('error', 'Error', res.message); return; }
+          this._todos = res.data || [];
+          this._filtrarLocal();
           if (tabla) tabla.classList.remove('hidden');
         })
         .withFailureHandler(err => {
@@ -58,102 +143,112 @@
         .listarUsuariosSistema();
     },
 
+    _filtrarLocal: function() {
+      const q = (document.getElementById('usr-busqueda')?.value || '').toLowerCase();
+      const lista = q
+        ? this._todos.filter(u => (u.apellido + ' ' + u.nombre + ' ' + u.username).toLowerCase().includes(q))
+        : this._todos;
+      this.renderizarTabla(lista);
+    },
+
     renderizarTabla: function(usuarios) {
-      const TIPOS = { 1: 'Sistemas', 2: 'Administrador', 3: 'Supervisor', 4: 'Operador', 5: 'Consulta' };
-      const COLORES_TIPO = { 1: '#7c3aed', 2: '#2563eb', 3: '#059669', 4: '#d97706', 5: '#6b7280' };
+      const TIPOS   = { 1:'Sistemas', 2:'Administrador', 3:'Supervisor', 4:'Operador', 5:'Consulta' };
+      const COLORES = { 1:'#7c3aed', 2:'#2563eb', 3:'#059669', 4:'#d97706', 5:'#6b7280' };
+
+      const total    = this._todos.length;
+      const activos  = this._todos.filter(u => u.estado).length;
+      const sistemas = this._todos.filter(u => u.tipo_usuario_id === 1).length;
+      const setTxt   = (id, v) => { const el = document.getElementById(id); if(el) el.innerText = v; };
+      setTxt('usr-stat-total',   total);
+      setTxt('usr-stat-activos', activos);
+      setTxt('usr-stat-sistemas',sistemas);
 
       const body = document.getElementById('admin-usr-body');
       if (!usuarios || usuarios.length === 0) {
-        body.innerHTML = `<div style="text-align:center; padding:40px; color:var(--text-muted);">
-          <i class="fas fa-user-slash fa-3x" style="opacity:0.2; margin-bottom:15px;"></i>
+        body.innerHTML = `<div style="text-align:center;padding:40px;color:var(--text-muted);">
+          <i class="fas fa-user-slash fa-3x" style="opacity:0.2;margin-bottom:15px;"></i>
           <p>No hay usuarios registrados.</p></div>`;
         return;
       }
 
-      body.innerHTML = usuarios.map(u => {
-        const tipo = TIPOS[u.tipo_usuario_id] || 'Sin tipo';
-        const color = COLORES_TIPO[u.tipo_usuario_id] || '#6b7280';
-        const permisos = (u.accesos || []).length;
-        const estadoBadge = u.estado
-          ? '<span style="color:var(--success); font-weight:700;">Activo</span>'
-          : '<span style="color:var(--danger); font-weight:700;">Inactivo</span>';
+      body.innerHTML = `<div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:10px;text-align:right;font-weight:700;">
+        ${usuarios.length} usuario${usuarios.length !== 1 ? 's' : ''}</div>` +
+        usuarios.map(u => {
+          const tipo  = TIPOS[u.tipo_usuario_id]   || 'Sin tipo';
+          const color = COLORES[u.tipo_usuario_id] || '#6b7280';
+          const permisos   = (u.accesos || []).length;
+          const estadoChip = u.estado
+            ? '<span class="usr-chip activo">Activo</span>'
+            : '<span class="usr-chip inactivo">Inactivo</span>';
 
-        return `
-        <div style="display:flex; justify-content:space-between; align-items:center;
-                    padding:16px 20px; border:1px solid var(--border-soft); border-radius:10px;
-                    margin-bottom:10px; background:var(--bg-surface); transition:0.2s;"
-             onmouseover="this.style.boxShadow='var(--shadow-sm)'"
-             onmouseout="this.style.boxShadow='none'">
-          <div style="display:flex; align-items:center; gap:14px; flex:1;">
-            <div style="width:42px; height:42px; border-radius:50%; background:${color}15;
-                        display:flex; align-items:center; justify-content:center;
-                        font-weight:800; color:${color}; font-size:0.85rem;">
-              ${(u.apellido || 'S')[0]}${(u.nombre || 'D')[0]}
+          return `
+          <div class="usr-card" style="${!u.estado ? 'opacity:0.6;' : ''}">
+            <div class="usr-avatar" style="background:${color}18;color:${color};">
+              ${(u.apellido||'S')[0]}${(u.nombre||'D')[0]}
             </div>
-            <div>
-              <div style="font-weight:700; color:var(--text-main); font-size:0.9rem;">
-                ${u.apellido || ''}, ${u.nombre || ''}
-              </div>
-              <div style="font-size:0.78rem; color:var(--text-muted); display:flex; gap:12px; margin-top:3px;">
-                <span><i class="fas fa-id-card" style="opacity:0.5;"></i> ${u.username}</span>
-                <span style="background:${color}15; color:${color}; padding:1px 8px; border-radius:10px; font-weight:600;">
-                  ${tipo}
-                </span>
-                <span><i class="fas fa-key" style="opacity:0.5;"></i> ${permisos} permisos</span>
-                ${estadoBadge}
+            <div style="flex:1;min-width:0;">
+              <div class="usr-name">${u.apellido||''}, ${u.nombre||''}</div>
+              <div class="usr-meta">
+                <span><i class="fas fa-at" style="opacity:0.5;margin-right:2px;"></i>${u.username}</span>
+                <span style="background:${color}18;color:${color};padding:2px 8px;border-radius:10px;font-weight:700;font-size:0.7rem;">${tipo}</span>
+                <span><i class="fas fa-key" style="opacity:0.5;margin-right:2px;"></i>${permisos} permisos</span>
+                ${estadoChip}
               </div>
             </div>
-          </div>
-          <div style="display:flex; gap:8px;">
-            <button class="btn btn-outline" style="padding:6px 10px; font-size:0.75rem;"
-                    onclick="AdminUsuarios.abrirEditar('${u.id}')"
-                    title="Editar tipo y permisos">
-              <i class="fas fa-pencil-alt" style="color:var(--primary);"></i>
-            </button>
-            <button class="btn btn-outline" style="padding:6px 10px; font-size:0.75rem;"
-                    onclick="AdminUsuarios.abrirResetPassword('${u.username}', '${u.apellido}, ${u.nombre}')"
-                    title="Resetear contraseña">
-              <i class="fas fa-key" style="color:var(--warning);"></i>
-            </button>
-            ${u.estado ? `
-            <button class="btn btn-outline" style="padding:6px 10px; font-size:0.75rem;"
-                    onclick="AdminUsuarios.confirmarDesactivar('${u.id}', '${u.apellido}, ${u.nombre}')"
-                    title="Desactivar usuario">
-              <i class="fas fa-user-slash" style="color:var(--danger);"></i>
-            </button>` : `
-            <button class="btn btn-outline" style="padding:6px 10px; font-size:0.75rem;"
-                    onclick="AdminUsuarios.confirmarReactivar('${u.id}', '${u.apellido}, ${u.nombre}')"
-                    title="Reactivar usuario">
-              <i class="fas fa-user-check" style="color:var(--success);"></i>
-            </button>`}
-          </div>
-        </div>`;
-      }).join('');
+            <div style="display:flex;gap:6px;">
+              <button class="btn btn-outline" style="padding:6px 10px;font-size:0.75rem;"
+                      onclick="AdminUsuarios.abrirEditar('${u.id}')" title="Editar permisos">
+                <i class="fas fa-pencil-alt" style="color:var(--primary);"></i>
+              </button>
+              <button class="btn btn-outline" style="padding:6px 10px;font-size:0.75rem;"
+                      onclick="AdminUsuarios.abrirResetPassword('${u.username}','${u.apellido}, ${u.nombre}')" title="Resetear contraseña">
+                <i class="fas fa-key" style="color:var(--warning);"></i>
+              </button>
+              ${u.estado ? `
+              <button class="btn btn-outline" style="padding:6px 10px;font-size:0.75rem;"
+                      onclick="AdminUsuarios.confirmarDesactivar('${u.id}','${u.apellido}, ${u.nombre}')" title="Desactivar">
+                <i class="fas fa-user-slash" style="color:var(--danger);"></i>
+              </button>` : `
+              <button class="btn btn-outline" style="padding:6px 10px;font-size:0.75rem;"
+                      onclick="AdminUsuarios.confirmarReactivar('${u.id}','${u.apellido}, ${u.nombre}')" title="Reactivar">
+                <i class="fas fa-user-check" style="color:var(--success);"></i>
+              </button>`}
+            </div>
+          </div>`;
+        }).join('');
     },
 
-    // =========================================================
-    // MODAL: CREAR USUARIO
-    // =========================================================
+    // ── TABS ──────────────────────────────────────
+    _tabCrear: function(i) {
+      document.querySelectorAll('#modal-crear-usuario .usr-tab-btn').forEach((b,idx) => b.classList.toggle('active', idx===i));
+      document.querySelectorAll('#modal-crear-usuario .usr-tab-panel').forEach((p,idx) => p.classList.toggle('active', idx===i));
+    },
+    _tabEditar: function(i) {
+      document.querySelectorAll('#modal-editar-usuario .usr-tab-btn').forEach((b,idx) => b.classList.toggle('active', idx===i));
+      document.querySelectorAll('#modal-editar-usuario .usr-tab-panel').forEach((p,idx) => p.classList.toggle('active', idx===i));
+    },
+
+    // ── MODAL CREAR ───────────────────────────────
     abrirModalCrear: function() {
-      // Reset form
-      document.getElementById('adm-agente').value = '';
-      document.getElementById('adm-password').value = '';
+      const m = document.getElementById('modal-crear-usuario');
+      if (m && m.parentElement !== document.body) document.body.appendChild(m);
+
+      document.getElementById('adm-agente').value       = '';
+      document.getElementById('adm-password').value     = '';
       document.getElementById('adm-tipo-usuario').value = '';
-      document.getElementById('adm-permisos-grid').innerHTML = '<p style="color:var(--text-muted); font-size:0.8rem;">Cargando permisos...</p>';
+      document.getElementById('adm-permisos-grid').innerHTML =
+        '<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:0.82rem;">Cargando permisos...</div>';
 
       const btn = document.getElementById('btn-crear-usuario');
       btn.disabled = false;
-      btn.innerHTML = '<i class="fas fa-save" style="margin-right:6px;"></i> Crear Usuario';
+      btn.innerHTML = '<i class="fas fa-save" style="margin-right:5px;"></i> Crear usuario';
 
-      document.getElementById('modal-crear-usuario').classList.remove('hidden');
+      this._tabCrear(0);
+      m.classList.remove('hidden');
 
-      // Cargar diccionarios
       google.script.run
         .withSuccessHandler(res => {
-          if (!res.success) {
-            Portal_Core.mostrarToast('error', 'Error', res.message);
-            return;
-          }
+          if (!res.success) { Portal_Core.mostrarToast('error', 'Error', res.message); return; }
           this._cache = res.data;
           this._poblarFormulario(res.data);
         })
@@ -161,251 +256,169 @@
     },
 
     _poblarFormulario: function(data) {
-      // Agentes sin usuario
-      const selAgente = document.getElementById('adm-agente');
-      selAgente.innerHTML = '<option value="">Seleccione un agente...</option>' +
-        data.agentes_sin_usuario.map(a =>
-          `<option value="${a.dni}">${a.apellido}, ${a.nombre} — DNI: ${a.dni}</option>`
-        ).join('');
-
-      // Tipos de usuario
-      const selTipo = document.getElementById('adm-tipo-usuario');
-      selTipo.innerHTML = '<option value="">Seleccione tipo...</option>' +
-        data.tipos_usuario.map(t =>
-          `<option value="${t.id}">${t.nombre} — ${t.descripcion}</option>`
-        ).join('');
-
-      // Permisos como checkboxes
-      const grid = document.getElementById('adm-permisos-grid');
-      grid.innerHTML = data.permisos.map(p => `
-        <label style="display:flex; align-items:center; gap:8px; padding:4px 0; font-size:0.82rem; cursor:pointer;">
-          <input type="checkbox" value="${p.id}" class="adm-permiso-check">
-          <span style="font-weight:600; color:var(--text-main); min-width:130px;">${p.clave_tecnica}</span>
-          <span style="color:var(--text-muted);">${p.nombre}</span>
-        </label>
-      `).join('');
+      document.getElementById('adm-agente').innerHTML = '<option value="">Seleccione un agente...</option>' +
+        data.agentes_sin_usuario.map(a => `<option value="${a.dni}">${a.apellido}, ${a.nombre} — DNI: ${a.dni}</option>`).join('');
+      document.getElementById('adm-tipo-usuario').innerHTML = '<option value="">Seleccione tipo...</option>' +
+        data.tipos_usuario.map(t => `<option value="${t.id}">${t.nombre} — ${t.descripcion}</option>`).join('');
+      _renderizarPermisos('adm-permisos-grid', data.permisos, [], 'adm-permiso-check');
     },
 
     seleccionarTodosPermisos: function(valor) {
       document.querySelectorAll('.adm-permiso-check').forEach(cb => cb.checked = valor);
+      _actualizarContadoresGrupo('adm-permisos-grid', 'adm-permiso-check');
     },
 
     generarPassword: function() {
-      const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
-      let pass = '';
-      for (let i = 0; i < 8; i++) pass += chars.charAt(Math.floor(Math.random() * chars.length));
-      document.getElementById('adm-password').value = pass;
+      const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#';
+      let p = ''; for (let i = 0; i < 10; i++) p += chars.charAt(Math.floor(Math.random() * chars.length));
+      document.getElementById('adm-password').value = p;
     },
 
-    // =========================================================
-    // GUARDAR USUARIO
-    // =========================================================
     guardarUsuario: function() {
-      const dni = document.getElementById('adm-agente').value;
+      const dni      = document.getElementById('adm-agente').value;
       const password = document.getElementById('adm-password').value.trim();
-      const tipoId = document.getElementById('adm-tipo-usuario').value;
-
-      if (!dni) return Portal_Core.mostrarToast('warning', 'Validación', 'Seleccione un agente.');
+      const tipoId   = document.getElementById('adm-tipo-usuario').value;
+      if (!dni)                            return Portal_Core.mostrarToast('warning', 'Validación', 'Seleccione un agente.');
       if (!password || password.length < 6) return Portal_Core.mostrarToast('warning', 'Validación', 'La contraseña debe tener al menos 6 caracteres.');
-      if (!tipoId) return Portal_Core.mostrarToast('warning', 'Validación', 'Seleccione un tipo de usuario.');
+      if (!tipoId)                         return Portal_Core.mostrarToast('warning', 'Validación', 'Seleccione un tipo de usuario.');
 
       const permisosIds = [];
       document.querySelectorAll('.adm-permiso-check:checked').forEach(cb => permisosIds.push(cb.value));
 
       const btn = document.getElementById('btn-crear-usuario');
-      btn.disabled = true;
-      btn.innerHTML = '<i class="fas fa-circle-notch spinner"></i> Creando...';
+      btn.disabled = true; btn.innerHTML = '<i class="fas fa-circle-notch spinner"></i> Creando...';
 
       google.script.run
         .withSuccessHandler(res => {
-          btn.disabled = false;
-          btn.innerHTML = '<i class="fas fa-save" style="margin-right:6px;"></i> Crear Usuario';
-          if (res.success) {
-            Portal_Core.cerrarModal('modal-crear-usuario');
-            Portal_Core.mostrarToast('success', 'Usuario Creado', res.message);
-            this.cargarUsuarios();
-          } else {
-            Portal_Core.mostrarToast('error', 'Error', res.message);
-          }
+          btn.disabled = false; btn.innerHTML = '<i class="fas fa-save" style="margin-right:5px;"></i> Crear usuario';
+          if (res.success) { Portal_Core.cerrarModal('modal-crear-usuario'); Portal_Core.mostrarToast('success','Usuario Creado',res.message); this.cargarUsuarios(); }
+          else Portal_Core.mostrarToast('error','Error',res.message);
         })
         .withFailureHandler(err => {
-          btn.disabled = false;
-          btn.innerHTML = '<i class="fas fa-save" style="margin-right:6px;"></i> Crear Usuario';
-          Portal_Core.mostrarToast('error', 'Error de Red', err.message);
+          btn.disabled = false; btn.innerHTML = '<i class="fas fa-save" style="margin-right:5px;"></i> Crear usuario';
+          Portal_Core.mostrarToast('error','Error de Red',err.message);
         })
-        .crearUsuarioSistema({
-          dni: dni,
-          password: password,
-          tipo_usuario_id: tipoId,
-          permisos_ids: permisosIds
-        });
+        .crearUsuarioSistema({ dni, password, tipo_usuario_id: tipoId, permisos_ids: permisosIds });
     },
 
-    // =========================================================
-    // RESETEAR PASSWORD
-    // =========================================================
+    // ── RESET PASSWORD ────────────────────────────
     abrirResetPassword: function(dni, nombreCompleto) {
-      document.getElementById('reset-dni').value = dni;
+      const m = document.getElementById('modal-reset-password');
+      if (m && m.parentElement !== document.body) document.body.appendChild(m);
+      document.getElementById('reset-dni').value            = dni;
       document.getElementById('reset-nombre-agente').innerText = nombreCompleto;
-      document.getElementById('reset-nuevo-pass').value = '';
-      document.getElementById('modal-reset-password').classList.remove('hidden');
+      document.getElementById('reset-nuevo-pass').value     = '';
+      m.classList.remove('hidden');
+    },
+
+    generarPasswordReset: function() {
+      const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#';
+      let p = ''; for (let i = 0; i < 10; i++) p += chars.charAt(Math.floor(Math.random() * chars.length));
+      document.getElementById('reset-nuevo-pass').value = p;
     },
 
     ejecutarReset: function() {
-      const dni = document.getElementById('reset-dni').value;
+      const dni       = document.getElementById('reset-dni').value;
       const nuevoPass = document.getElementById('reset-nuevo-pass').value.trim();
-
-      if (!nuevoPass || nuevoPass.length < 6) {
-        return Portal_Core.mostrarToast('warning', 'Validación', 'Mínimo 6 caracteres.');
-      }
-
+      if (!nuevoPass || nuevoPass.length < 6) return Portal_Core.mostrarToast('warning','Validación','Mínimo 6 caracteres.');
       const btn = document.getElementById('btn-reset-pass');
-      btn.disabled = true;
-      btn.innerHTML = '<i class="fas fa-circle-notch spinner"></i>';
-
+      btn.disabled = true; btn.innerHTML = '<i class="fas fa-circle-notch spinner"></i>';
       google.script.run
         .withSuccessHandler(res => {
-          btn.disabled = false;
-          btn.innerHTML = '<i class="fas fa-sync-alt" style="margin-right:6px;"></i> Resetear';
-          if (res.success) {
-            Portal_Core.cerrarModal('modal-reset-password');
-            Portal_Core.mostrarToast('success', 'Contraseña Reseteada', res.message);
-          } else {
-            Portal_Core.mostrarToast('error', 'Error', res.message);
-          }
+          btn.disabled = false; btn.innerHTML = '<i class="fas fa-sync-alt" style="margin-right:5px;"></i> Resetear';
+          if (res.success) { Portal_Core.cerrarModal('modal-reset-password'); Portal_Core.mostrarToast('success','Contraseña Reseteada',res.message); }
+          else Portal_Core.mostrarToast('error','Error',res.message);
         })
         .resetearPasswordUsuario(dni, nuevoPass);
     },
 
-    // =========================================================
-    // DESACTIVAR USUARIO
-    // =========================================================
-    
+    // ── DESACTIVAR / REACTIVAR ────────────────────
     confirmarDesactivar: function(usuarioId, nombre) {
-      Portal_Core.mostrarConfirmacion(
-        '¿Desactivar Usuario?',
-        `El usuario de ${nombre} será desactivado y no podrá ingresar al sistema. Esta acción es reversible.`,
-        () => {
-          google.script.run
-            .withSuccessHandler(res => {
-              if (res.success) {
-                Portal_Core.mostrarToast('success', 'Desactivado', res.message);
-                this.cargarUsuarios();
-              } else {
-                Portal_Core.mostrarToast('error', 'Error', res.message);
-              }
-            })
-            .desactivarUsuario(usuarioId);
-        }
-      );
+      Portal_Core.mostrarConfirmacion('¿Desactivar usuario?', `El usuario de ${nombre} será desactivado.`, () => {
+        google.script.run
+          .withSuccessHandler(res => {
+            if (res.success) { Portal_Core.mostrarToast('success','Desactivado',res.message); this.cargarUsuarios(); }
+            else Portal_Core.mostrarToast('error','Error',res.message);
+          })
+          .desactivarUsuario(usuarioId);
+      });
     },
 
-    // =========================================================
-    // MODAL: EDITAR USUARIO
-    // =========================================================
+    // ── EDITAR USUARIO ────────────────────────────
     abrirEditar: function(usuarioId) {
-      var modal = document.getElementById('modal-editar-usuario');
-      if (!modal) return Portal_Core.mostrarToast('error', 'Error', 'Modal de edición no encontrado.');
- 
-      var grid = document.getElementById('edit-usr-permisos-grid');
-      if (grid) grid.innerHTML = '<p style="color:var(--text-muted); font-size:0.8rem; text-align:center; padding:20px;"><i class="fas fa-circle-notch spinner"></i> Cargando...</p>';
+      const modal = document.getElementById('modal-editar-usuario');
+      if (modal && modal.parentElement !== document.body) document.body.appendChild(modal);
+
+      const grid = document.getElementById('edit-usr-permisos-grid');
+      if (grid) grid.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:0.82rem;"><i class="fas fa-circle-notch spinner"></i> Cargando...</div>';
+      this._tabEditar(0);
       modal.classList.remove('hidden');
- 
+
       google.script.run
-        .withSuccessHandler(function(res) {
-          if (!res.success) {
-            Portal_Core.cerrarModal('modal-editar-usuario');
-            Portal_Core.mostrarToast('error', 'Error', res.message);
-            return;
-          }
-          var d = res.data;
-          var u = d.usuario;
- 
+        .withSuccessHandler(res => {
+          if (!res.success) { Portal_Core.cerrarModal('modal-editar-usuario'); Portal_Core.mostrarToast('error','Error',res.message); return; }
+          const d = res.data, u = d.usuario;
+
           document.getElementById('edit-usr-id').value = u.id;
-          document.getElementById('edit-usr-nombre').innerText = (u.apellido || '') + ', ' + (u.nombre || '');
+          document.getElementById('edit-usr-nombre').innerText = (u.apellido||'') + ', ' + (u.nombre||'');
           document.getElementById('edit-usr-dni-val').innerText = u.username;
- 
-          // Poblar tipo de usuario
-          var selTipo = document.getElementById('edit-usr-tipo');
-          selTipo.innerHTML = d.tipos_usuario.map(function(t) {
-            return '<option value="' + t.id + '"' + (t.id === u.tipo_usuario_id ? ' selected' : '') + '>' + t.nombre + ' — ' + t.descripcion + '</option>';
-          }).join('');
- 
-          // Poblar permisos con checks actuales
-          var grid = document.getElementById('edit-usr-permisos-grid');
-          grid.innerHTML = d.todos_permisos.map(function(p) {
-            var checked = d.permisos_actuales.indexOf(p.id) !== -1 ? ' checked' : '';
-            return '<label style="display:flex; align-items:center; gap:8px; padding:4px 0; font-size:0.82rem; cursor:pointer;">' +
-              '<input type="checkbox" value="' + p.id + '" class="edit-permiso-check"' + checked + '>' +
-              '<span style="font-weight:600; color:var(--text-main); min-width:130px;">' + p.clave_tecnica + '</span>' +
-              '<span style="color:var(--text-muted);">' + p.nombre + '</span>' +
-              '</label>';
-          }).join('');
+
+          // Avatar
+          const AV_COLORS = ['#7c3aed','#059669','#2563eb','#d97706','#db2777'];
+          const av = document.getElementById('edit-usr-avatar');
+          if (av) {
+            av.style.background = (AV_COLORS[Math.abs(u.id.charCodeAt(0) - 65) % AV_COLORS.length]) + '22';
+            av.style.color = AV_COLORS[Math.abs(u.id.charCodeAt(0) - 65) % AV_COLORS.length];
+            av.innerText = (u.apellido||'S')[0] + (u.nombre||'D')[0];
+          }
+
+          const selTipo = document.getElementById('edit-usr-tipo');
+          selTipo.innerHTML = d.tipos_usuario.map(t =>
+            `<option value="${t.id}"${t.id === u.tipo_usuario_id ? ' selected' : ''}>${t.nombre} — ${t.descripcion}</option>`
+          ).join('');
+
+          _renderizarPermisos('edit-usr-permisos-grid', d.todos_permisos, d.permisos_actuales, 'edit-permiso-check');
         })
-        .withFailureHandler(function(err) {
-          Portal_Core.cerrarModal('modal-editar-usuario');
-          Portal_Core.mostrarToast('error', 'Error de Red', err.message);
-        })
+        .withFailureHandler(err => { Portal_Core.cerrarModal('modal-editar-usuario'); Portal_Core.mostrarToast('error','Error de Red',err.message); })
         .obtenerUsuarioConPermisos(usuarioId);
     },
- 
+
     seleccionarTodosPermisosEdit: function(valor) {
-      document.querySelectorAll('.edit-permiso-check').forEach(function(cb) { cb.checked = valor; });
+      document.querySelectorAll('.edit-permiso-check').forEach(cb => cb.checked = valor);
+      _actualizarContadoresGrupo('edit-usr-permisos-grid', 'edit-permiso-check');
     },
- 
+
     guardarEdicion: function() {
-      var usuarioId = document.getElementById('edit-usr-id').value;
-      var tipoId    = document.getElementById('edit-usr-tipo').value;
- 
-      var permisosIds = [];
-      document.querySelectorAll('.edit-permiso-check:checked').forEach(function(cb) {
-        permisosIds.push(cb.value);
-      });
- 
-      var btn = document.getElementById('btn-guardar-edicion-usr');
-      btn.disabled = true;
-      btn.innerHTML = '<i class="fas fa-circle-notch spinner"></i> Guardando...';
- 
+      const usuarioId  = document.getElementById('edit-usr-id').value;
+      const tipoId     = document.getElementById('edit-usr-tipo').value;
+      const permisosIds = [];
+      document.querySelectorAll('.edit-permiso-check:checked').forEach(cb => permisosIds.push(cb.value));
+
+      const btn = document.getElementById('btn-guardar-edicion-usr');
+      btn.disabled = true; btn.innerHTML = '<i class="fas fa-circle-notch spinner"></i> Guardando...';
+
       google.script.run
-        .withSuccessHandler(function(res) {
-          btn.disabled = false;
-          btn.innerHTML = '<i class="fas fa-save" style="margin-right:6px;"></i> Guardar Cambios';
-          if (res.success) {
-            Portal_Core.cerrarModal('modal-editar-usuario');
-            Portal_Core.mostrarToast('success', 'Actualizado', res.message);
-            AdminUsuarios.cargarUsuarios();
-          } else {
-            Portal_Core.mostrarToast('error', 'Error', res.message);
-          }
+        .withSuccessHandler(res => {
+          btn.disabled = false; btn.innerHTML = '<i class="fas fa-save" style="margin-right:5px;"></i> Guardar cambios';
+          if (res.success) { Portal_Core.cerrarModal('modal-editar-usuario'); Portal_Core.mostrarToast('success','Actualizado',res.message); AdminUsuarios.cargarUsuarios(); }
+          else Portal_Core.mostrarToast('error','Error',res.message);
         })
-        .withFailureHandler(function(err) {
-          btn.disabled = false;
-          btn.innerHTML = '<i class="fas fa-save" style="margin-right:6px;"></i> Guardar Cambios';
-          Portal_Core.mostrarToast('error', 'Error de Red', err.message);
+        .withFailureHandler(err => {
+          btn.disabled = false; btn.innerHTML = '<i class="fas fa-save" style="margin-right:5px;"></i> Guardar cambios';
+          Portal_Core.mostrarToast('error','Error de Red',err.message);
         })
         .actualizarUsuarioCompleto(usuarioId, tipoId, permisosIds);
     },
- 
-    // =========================================================
-    // REACTIVAR USUARIO
-    // =========================================================
+
     confirmarReactivar: function(usuarioId, nombre) {
-      Portal_Core.mostrarConfirmacion(
-        '¿Reactivar Usuario?',
-        'El usuario de ' + nombre + ' será reactivado y podrá ingresar al sistema nuevamente.',
-        function() {
-          google.script.run
-            .withSuccessHandler(function(res) {
-              if (res.success) {
-                Portal_Core.mostrarToast('success', 'Reactivado', res.message);
-                AdminUsuarios.cargarUsuarios();
-              } else {
-                Portal_Core.mostrarToast('error', 'Error', res.message);
-              }
-            })
-            .reactivarUsuario(usuarioId);
-        }
-      );
+      Portal_Core.mostrarConfirmacion('¿Reactivar usuario?', 'El usuario de ' + nombre + ' podrá ingresar nuevamente.', () => {
+        google.script.run
+          .withSuccessHandler(res => {
+            if (res.success) { Portal_Core.mostrarToast('success','Reactivado',res.message); AdminUsuarios.cargarUsuarios(); }
+            else Portal_Core.mostrarToast('error','Error',res.message);
+          })
+          .reactivarUsuario(usuarioId);
+      });
     }
   };
 </script>

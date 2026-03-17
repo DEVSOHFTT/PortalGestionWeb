@@ -1,168 +1,258 @@
-<!-- =====================================================
-     VISTA: Administración de Usuarios
-     Solo visible para tipo_usuario = 1 (Sistemas)
-     ===================================================== -->
-<div style="padding: 20px; max-width: 900px; margin: 0 auto;">
+<style>
+  .usr-stats-row { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:1.25rem; }
+  .usr-stat-card { background:var(--bg-surface); border:1px solid var(--border-soft); border-radius:10px; padding:12px 16px; display:flex; align-items:center; gap:10px; }
+  .usr-stat-icon { width:36px; height:36px; border-radius:8px; display:flex; align-items:center; justify-content:center; flex-shrink:0; font-size:0.85rem; }
+  .usr-stat-icon.p { background:var(--primary-light); color:var(--primary); }
+  .usr-stat-icon.g { background:#EAF3DE; color:#3B6D11; }
+  .usr-stat-icon.a { background:#FAEEDA; color:#854F0B; }
+  .usr-stat-label { font-size:0.7rem; color:var(--text-muted); font-weight:700; text-transform:uppercase; }
+  .usr-stat-val { font-size:1.25rem; font-weight:800; color:var(--text-main); }
 
-  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:25px;">
-    <div>
-      <h2 style="font-size:1.3rem; font-weight:800; color:var(--text-main); margin:0;">
-        <i class="fas fa-users-cog" style="color:var(--primary); margin-right:8px;"></i>
-        Gestión de Usuarios
-      </h2>
-      <p style="font-size:0.8rem; color:var(--text-muted); margin-top:4px;">
-        Crear usuarios, asignar permisos y resetear contraseñas.
-      </p>
+  .usr-toolbar { display:flex; align-items:center; gap:8px; margin-bottom:1rem; flex-wrap:wrap; }
+  .usr-search-wrap { flex:1; min-width:150px; position:relative; }
+  .usr-search-wrap input { width:100%; padding:8px 10px 8px 32px; border:1px solid var(--border-soft); border-radius:8px; font-size:0.82rem; background:var(--bg-surface); color:var(--text-main); outline:none; transition:0.2s; }
+  .usr-search-wrap input:focus { border-color:var(--primary); box-shadow:0 0 0 3px var(--primary-light); }
+  .usr-search-icon { position:absolute; left:9px; top:50%; transform:translateY(-50%); color:var(--text-muted); font-size:0.75rem; pointer-events:none; }
+
+  .usr-card { display:flex; align-items:center; gap:12px; padding:13px 16px; border:1px solid var(--border-soft); border-radius:12px; margin-bottom:8px; background:var(--bg-surface); transition:0.15s; }
+  .usr-card:hover { box-shadow:var(--shadow-sm); }
+  .usr-avatar { width:40px; height:40px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:0.82rem; flex-shrink:0; }
+  .usr-name { font-weight:700; color:var(--text-main); font-size:0.88rem; }
+  .usr-meta { display:flex; align-items:center; gap:8px; margin-top:3px; flex-wrap:wrap; }
+  .usr-meta span { font-size:0.75rem; color:var(--text-muted); }
+  .usr-chip { font-size:0.7rem; padding:2px 8px; border-radius:20px; font-weight:700; }
+  .usr-chip.activo  { background:#EAF3DE; color:#3B6D11; }
+  .usr-chip.inactivo { background:#FCEBEB; color:#A32D2D; }
+
+  /* TABS del modal */
+  .usr-tab-nav { display:flex; gap:2px; border-bottom:1px solid var(--border-soft); margin-bottom:1.1rem; }
+  .usr-tab-btn { padding:7px 16px; border:none; background:transparent; cursor:pointer; font-size:0.82rem; font-weight:600; color:var(--text-muted); border-bottom:2px solid transparent; margin-bottom:-1px; transition:0.12s; }
+  .usr-tab-btn.active { color:var(--primary); border-bottom-color:var(--primary); }
+  .usr-tab-panel { display:none; }
+  .usr-tab-panel.active { display:block; }
+
+  /* ── PERMISOS: grid de 3 columnas fijas ── */
+  .perm-container { border:1px solid var(--border-soft); border-radius:8px; overflow:hidden; max-height:340px; overflow-y:auto; }
+  .perm-group { border-bottom:1px solid var(--border-soft); }
+  .perm-group:last-child { border-bottom:none; }
+  .perm-group-hdr {
+    display:grid;
+    grid-template-columns:1fr auto auto;
+    align-items:center;
+    gap:8px;
+    padding:8px 12px;
+    background:var(--bg-app);
+    cursor:pointer;
+    user-select:none;
+  }
+  .perm-group-hdr:hover { background:#f1f0fb; }
+  .perm-group-title { font-size:0.78rem; font-weight:700; color:var(--text-main); display:flex; align-items:center; gap:7px; }
+  .perm-group-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+  .perm-group-count { font-size:0.7rem; color:var(--text-muted); font-weight:600; white-space:nowrap; }
+  .perm-group-toggle { font-size:0.7rem; color:var(--primary); background:none; border:none; cursor:pointer; font-weight:700; padding:2px 6px; border-radius:4px; white-space:nowrap; }
+  .perm-group-toggle:hover { background:var(--primary-light); }
+  .perm-group-body { padding:4px 0 6px; }
+
+  /* Cada permiso: 3 columnas fijas = checkbox | código | descripción */
+  .perm-item {
+    display:grid;
+    grid-template-columns:28px 150px 1fr;
+    align-items:center;
+    gap:0;
+    padding:5px 12px;
+    cursor:pointer;
+    transition:background 0.1s;
+  }
+  .perm-item:hover { background:var(--bg-app); }
+  .perm-item input[type=checkbox] {
+    width:15px; height:15px; accent-color:var(--primary);
+    cursor:pointer; justify-self:center;
+  }
+  .perm-code {
+    font-size:0.72rem; font-weight:700; color:var(--primary);
+    font-family:monospace; padding-right:8px;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .perm-desc { font-size:0.78rem; color:var(--text-muted); }
+</style>
+
+<div style="padding:16px; max-width:960px; margin:0 auto;">
+
+  <div class="usr-stats-row">
+    <div class="usr-stat-card">
+      <div class="usr-stat-icon p"><i class="fas fa-users"></i></div>
+      <div><div class="usr-stat-label">Total usuarios</div><div class="usr-stat-val" id="usr-stat-total">—</div></div>
+    </div>
+    <div class="usr-stat-card">
+      <div class="usr-stat-icon g"><i class="fas fa-user-check"></i></div>
+      <div><div class="usr-stat-label">Activos</div><div class="usr-stat-val" id="usr-stat-activos">—</div></div>
+    </div>
+    <div class="usr-stat-card">
+      <div class="usr-stat-icon a"><i class="fas fa-key"></i></div>
+      <div><div class="usr-stat-label">Sistemas</div><div class="usr-stat-val" id="usr-stat-sistemas">—</div></div>
+    </div>
+  </div>
+
+  <div class="usr-toolbar">
+    <div class="usr-search-wrap">
+      <i class="fas fa-search usr-search-icon"></i>
+      <input type="text" id="usr-busqueda" placeholder="Buscar por nombre, usuario..." oninput="AdminUsuarios._filtrarLocal()">
     </div>
     <button class="btn btn-primary" onclick="AdminUsuarios.abrirModalCrear()">
-      <i class="fas fa-user-plus" style="margin-right:6px;"></i> Nuevo Usuario
+      <i class="fas fa-user-plus" style="margin-right:5px;"></i> Nuevo usuario
     </button>
   </div>
 
-  <!-- Loader -->
   <div id="admin-usr-loader" style="text-align:center; padding:40px;">
     <i class="fas fa-circle-notch spinner fa-2x" style="color:var(--primary);"></i>
     <p style="margin-top:10px; color:var(--text-muted);">Cargando usuarios...</p>
   </div>
-
-  <!-- Tabla de usuarios -->
   <div id="admin-usr-tabla" class="hidden">
     <div id="admin-usr-body"></div>
   </div>
-
 </div>
 
-<!-- =====================================================
-     MODAL: Crear Usuario
-     ===================================================== -->
+<!-- =============================================
+     MODAL: Crear Usuario — con tabs Datos / Permisos
+     ============================================= -->
 <div id="modal-crear-usuario" class="modal-overlay hidden">
-  <div class="modal-box" style="max-width:550px;">
+  <div class="modal-box" style="max-width:560px; max-height:92vh; overflow-y:auto;">
     <div class="modal-header">
-      <span><i class="fas fa-user-plus" style="color:var(--primary)"></i> Nuevo Usuario del Sistema</span>
-      <button class="btn-icono" style="border:none;" onclick="Portal_Core.cerrarModal('modal-crear-usuario')">
-        <i class="fas fa-times"></i>
-      </button>
+      <span><i class="fas fa-user-plus" style="color:var(--primary)"></i> Nuevo usuario del sistema</span>
+      <button class="btn-icono" style="border:none;" onclick="Portal_Core.cerrarModal('modal-crear-usuario')"><i class="fas fa-times"></i></button>
     </div>
 
-    <!-- Selector de agente -->
-    <div class="form-group" style="margin-bottom:15px;">
-      <label class="form-label">Agente (sin usuario asignado) <span style="color:var(--danger)">*</span></label>
-      <select id="adm-agente" class="form-input">
-        <option value="">Seleccione un agente...</option>
-      </select>
+    <div class="usr-tab-nav">
+      <button class="usr-tab-btn active" onclick="AdminUsuarios._tabCrear(0)">Datos</button>
+      <button class="usr-tab-btn" onclick="AdminUsuarios._tabCrear(1)">Permisos</button>
     </div>
 
-    <!-- Password -->
-    <div class="form-group" style="margin-bottom:15px;">
-      <label class="form-label">Contraseña inicial <span style="color:var(--danger)">*</span></label>
-      <div style="display:flex; gap:8px;">
-        <input type="text" id="adm-password" class="form-input" placeholder="Mínimo 6 caracteres" style="flex:1;">
-        <button class="btn btn-outline" onclick="AdminUsuarios.generarPassword()" title="Generar automática" style="padding:8px 14px;">
-          <i class="fas fa-dice"></i>
+    <!-- TAB 0: DATOS -->
+    <div class="usr-tab-panel active" id="crear-tab-0">
+      <div class="form-group" style="margin-bottom:12px;">
+        <label class="form-label">Agente (sin usuario asignado) <span style="color:var(--danger)">*</span></label>
+        <select id="adm-agente" class="form-input"><option value="">Seleccione un agente...</option></select>
+      </div>
+      <div class="form-group" style="margin-bottom:12px;">
+        <label class="form-label">Contraseña inicial <span style="color:var(--danger)">*</span></label>
+        <div style="display:flex;gap:8px;">
+          <input type="text" id="adm-password" class="form-input" placeholder="Mínimo 6 caracteres" style="flex:1;">
+          <button class="btn btn-outline" onclick="AdminUsuarios.generarPassword()" title="Generar automática" style="padding:8px 14px;"><i class="fas fa-dice"></i></button>
+        </div>
+      </div>
+      <div class="form-group" style="margin-bottom:4px;">
+        <label class="form-label">Tipo de usuario <span style="color:var(--danger)">*</span></label>
+        <select id="adm-tipo-usuario" class="form-input"><option value="">Seleccione tipo...</option></select>
+      </div>
+      <div style="margin-top:14px; text-align:right;">
+        <button class="btn btn-primary" onclick="AdminUsuarios._tabCrear(1)">
+          Siguiente: Permisos <i class="fas fa-arrow-right" style="margin-left:5px;"></i>
         </button>
       </div>
     </div>
 
-    <!-- Tipo de usuario -->
-    <div class="form-group" style="margin-bottom:15px;">
-      <label class="form-label">Tipo de usuario <span style="color:var(--danger)">*</span></label>
-      <select id="adm-tipo-usuario" class="form-input">
-        <option value="">Seleccione tipo...</option>
-      </select>
-    </div>
-
-    <!-- Permisos -->
-    <div class="form-group" style="margin-bottom:15px;">
-      <label class="form-label">Permisos del sistema</label>
-      <div style="display:flex; gap:8px; margin-bottom:8px;">
-        <button class="btn btn-outline" onclick="AdminUsuarios.seleccionarTodosPermisos(true)" style="font-size:0.75rem; padding:4px 10px;">Todos</button>
-        <button class="btn btn-outline" onclick="AdminUsuarios.seleccionarTodosPermisos(false)" style="font-size:0.75rem; padding:4px 10px;">Ninguno</button>
+    <!-- TAB 1: PERMISOS -->
+    <div class="usr-tab-panel" id="crear-tab-1">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <span style="font-size:0.72rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;">Permisos del sistema</span>
+        <div style="display:flex;gap:6px;">
+          <button class="btn btn-outline" onclick="AdminUsuarios.seleccionarTodosPermisos(true)" style="font-size:0.72rem;padding:4px 10px;">Todos</button>
+          <button class="btn btn-outline" onclick="AdminUsuarios.seleccionarTodosPermisos(false)" style="font-size:0.72rem;padding:4px 10px;">Ninguno</button>
+        </div>
       </div>
-      <div id="adm-permisos-grid" style="max-height:200px; overflow-y:auto; border:1px solid var(--border-soft); border-radius:8px; padding:10px;">
-        <!-- Se llena dinámicamente -->
+      <div id="adm-permisos-grid" class="perm-container">
+        <div style="padding:20px;text-align:center;color:var(--text-muted);font-size:0.82rem;">Cargando permisos...</div>
       </div>
     </div>
 
-    <div style="text-align:right; margin-top:20px;">
+    <div style="text-align:right;margin-top:16px;border-top:1px solid var(--border-soft);padding-top:14px;display:flex;justify-content:flex-end;gap:8px;">
       <button class="btn btn-outline" onclick="Portal_Core.cerrarModal('modal-crear-usuario')">Cancelar</button>
       <button class="btn btn-primary" id="btn-crear-usuario" onclick="AdminUsuarios.guardarUsuario()">
-        <i class="fas fa-save" style="margin-right:6px;"></i> Crear Usuario
+        <i class="fas fa-save" style="margin-right:5px;"></i> Crear usuario
       </button>
     </div>
   </div>
 </div>
 
-<!-- =====================================================
-     MODAL: Resetear Password
-     ===================================================== -->
+<!-- MODAL: Resetear Password -->
 <div id="modal-reset-password" class="modal-overlay hidden">
   <div class="modal-box" style="max-width:400px;">
     <div class="modal-header">
-      <span><i class="fas fa-key" style="color:var(--warning)"></i> Resetear Contraseña</span>
-      <button class="btn-icono" style="border:none;" onclick="Portal_Core.cerrarModal('modal-reset-password')">
-        <i class="fas fa-times"></i>
-      </button>
+      <span><i class="fas fa-key" style="color:var(--warning)"></i> Resetear contraseña</span>
+      <button class="btn-icono" style="border:none;" onclick="Portal_Core.cerrarModal('modal-reset-password')"><i class="fas fa-times"></i></button>
     </div>
-
     <input type="hidden" id="reset-dni" value="">
-    <p id="reset-nombre-agente" style="font-weight:700; margin-bottom:15px; color:var(--text-main);"></p>
-
+    <p id="reset-nombre-agente" style="font-weight:700;margin-bottom:14px;color:var(--text-main);font-size:0.95rem;"></p>
     <div class="form-group">
       <label class="form-label">Nueva contraseña <span style="color:var(--danger)">*</span></label>
-      <input type="text" id="reset-nuevo-pass" class="form-input" placeholder="Mínimo 6 caracteres">
+      <div style="display:flex;gap:8px;">
+        <input type="text" id="reset-nuevo-pass" class="form-input" placeholder="Mínimo 6 caracteres" style="flex:1;">
+        <button class="btn btn-outline" onclick="AdminUsuarios.generarPasswordReset()" style="padding:8px 12px;"><i class="fas fa-dice"></i></button>
+      </div>
     </div>
-
-    <div style="text-align:right; margin-top:20px;">
+    <div style="text-align:right;margin-top:16px;display:flex;justify-content:flex-end;gap:8px;">
       <button class="btn btn-outline" onclick="Portal_Core.cerrarModal('modal-reset-password')">Cancelar</button>
       <button class="btn btn-primary" id="btn-reset-pass" onclick="AdminUsuarios.ejecutarReset()">
-        <i class="fas fa-sync-alt" style="margin-right:6px;"></i> Resetear
+        <i class="fas fa-sync-alt" style="margin-right:5px;"></i> Resetear
       </button>
     </div>
   </div>
 </div>
 
-<!-- =====================================================
-     MODAL: Editar Usuario (tipo + permisos)
-     AGREGAR al final de Admin_Usuarios_View.html,
-     después del modal de Reset Password.
-     ===================================================== -->
+<!-- MODAL: Editar Usuario — con tabs Datos / Permisos -->
 <div id="modal-editar-usuario" class="modal-overlay hidden">
-  <div class="modal-box" style="max-width:550px;">
+  <div class="modal-box" style="max-width:560px; max-height:92vh; overflow-y:auto;">
     <div class="modal-header">
-      <span><i class="fas fa-user-edit" style="color:var(--primary)"></i> Editar Usuario</span>
-      <button class="btn-icono" style="border:none;" onclick="Portal_Core.cerrarModal('modal-editar-usuario')">
-        <i class="fas fa-times"></i>
-      </button>
+      <span><i class="fas fa-user-edit" style="color:var(--primary)"></i> Editar usuario</span>
+      <button class="btn-icono" style="border:none;" onclick="Portal_Core.cerrarModal('modal-editar-usuario')"><i class="fas fa-times"></i></button>
     </div>
-
     <input type="hidden" id="edit-usr-id" value="">
 
-    <p id="edit-usr-nombre" style="font-weight:700; margin-bottom:5px; color:var(--text-main); font-size:1rem;"></p>
-    <p id="edit-usr-dni" style="font-size:0.82rem; color:var(--text-muted); margin-bottom:20px;">
-      <i class="fas fa-id-card" style="opacity:0.5;"></i> <span id="edit-usr-dni-val"></span>
-    </p>
-
-    <!-- Tipo de usuario -->
-    <div class="form-group" style="margin-bottom:15px;">
-      <label class="form-label">Tipo de usuario <span style="color:var(--danger)">*</span></label>
-      <select id="edit-usr-tipo" class="form-input"></select>
-    </div>
-
-    <!-- Permisos -->
-    <div class="form-group" style="margin-bottom:15px;">
-      <label class="form-label">Permisos del sistema</label>
-      <div style="display:flex; gap:8px; margin-bottom:8px;">
-        <button class="btn btn-outline" onclick="AdminUsuarios.seleccionarTodosPermisosEdit(true)" style="font-size:0.75rem; padding:4px 10px;">Todos</button>
-        <button class="btn btn-outline" onclick="AdminUsuarios.seleccionarTodosPermisosEdit(false)" style="font-size:0.75rem; padding:4px 10px;">Ninguno</button>
-      </div>
-      <div id="edit-usr-permisos-grid" style="max-height:220px; overflow-y:auto; border:1px solid var(--border-soft); border-radius:8px; padding:10px;">
+    <!-- Info agente (siempre visible) -->
+    <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg-app);border-radius:8px;margin-bottom:1rem;border:1px solid var(--border-soft);">
+      <div id="edit-usr-avatar" style="width:36px;height:36px;border-radius:50%;background:var(--primary-light);color:var(--primary);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:0.82rem;flex-shrink:0;"></div>
+      <div>
+        <div id="edit-usr-nombre" style="font-weight:700;color:var(--text-main);font-size:0.9rem;"></div>
+        <div style="font-size:0.75rem;color:var(--text-muted);"><i class="fas fa-id-card" style="opacity:0.5;margin-right:3px;"></i><span id="edit-usr-dni-val"></span></div>
       </div>
     </div>
 
-    <div style="text-align:right; margin-top:20px;">
+    <div class="usr-tab-nav">
+      <button class="usr-tab-btn active" onclick="AdminUsuarios._tabEditar(0)">Datos</button>
+      <button class="usr-tab-btn" onclick="AdminUsuarios._tabEditar(1)">Permisos</button>
+    </div>
+
+    <!-- TAB 0: DATOS -->
+    <div class="usr-tab-panel active" id="editar-tab-0">
+      <div class="form-group" style="margin-bottom:12px;">
+        <label class="form-label">Tipo de usuario <span style="color:var(--danger)">*</span></label>
+        <select id="edit-usr-tipo" class="form-input"></select>
+      </div>
+      <div style="margin-top:14px;text-align:right;">
+        <button class="btn btn-primary" onclick="AdminUsuarios._tabEditar(1)">
+          Ver permisos <i class="fas fa-arrow-right" style="margin-left:5px;"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- TAB 1: PERMISOS -->
+    <div class="usr-tab-panel" id="editar-tab-1">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <span style="font-size:0.72rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;">Permisos del sistema</span>
+        <div style="display:flex;gap:6px;">
+          <button class="btn btn-outline" onclick="AdminUsuarios.seleccionarTodosPermisosEdit(true)" style="font-size:0.72rem;padding:4px 10px;">Todos</button>
+          <button class="btn btn-outline" onclick="AdminUsuarios.seleccionarTodosPermisosEdit(false)" style="font-size:0.72rem;padding:4px 10px;">Ninguno</button>
+        </div>
+      </div>
+      <div id="edit-usr-permisos-grid" class="perm-container">
+        <div style="padding:20px;text-align:center;color:var(--text-muted);font-size:0.82rem;"><i class="fas fa-circle-notch spinner"></i> Cargando...</div>
+      </div>
+    </div>
+
+    <div style="text-align:right;margin-top:16px;border-top:1px solid var(--border-soft);padding-top:14px;display:flex;justify-content:flex-end;gap:8px;">
       <button class="btn btn-outline" onclick="Portal_Core.cerrarModal('modal-editar-usuario')">Cancelar</button>
       <button class="btn btn-primary" id="btn-guardar-edicion-usr" onclick="AdminUsuarios.guardarEdicion()">
-        <i class="fas fa-save" style="margin-right:6px;"></i> Guardar Cambios
+        <i class="fas fa-save" style="margin-right:5px;"></i> Guardar cambios
       </button>
     </div>
   </div>

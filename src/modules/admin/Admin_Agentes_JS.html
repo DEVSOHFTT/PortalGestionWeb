@@ -2,6 +2,7 @@
   window.AdminAgentes = {
 
     _cache: null,
+    _todos: [],
 
     iniciar: function() {
       document.getElementById('ruta-actual').innerText = 'Gestión de Agentes';
@@ -10,21 +11,18 @@
         cargarModulo('PortalHome');
         return;
       }
+      // Mover modal al body para bloqueo global correcto
+      const m = document.getElementById('modal-agente');
+      if (m && m.parentElement !== document.body) document.body.appendChild(m);
+
       this._cargarDiccionarios(() => this.cargar());
     },
 
     _cargarDiccionarios: function(callback) {
-      if (this._cache) {
-        this._poblarFiltros();
-        if (callback) callback();
-        return;
-      }
+      if (this._cache) { this._poblarFiltros(); if (callback) callback(); return; }
       google.script.run
         .withSuccessHandler(res => {
-          if (res.success) {
-            this._cache = res.data;
-            this._poblarFiltros();
-          }
+          if (res.success) { this._cache = res.data; this._poblarFiltros(); }
           if (callback) callback();
         })
         .obtenerDiccionariosAgentes();
@@ -33,10 +31,9 @@
     _poblarFiltros: function() {
       if (!this._cache) return;
       const sel = document.getElementById('adm-ag-filtro-area');
-      if (sel && sel.options.length <= 1) {
-        sel.innerHTML = '<option value="">Todas las Áreas</option>' +
+      if (sel && sel.options.length <= 1)
+        sel.innerHTML = '<option value="">Todas las áreas</option>' +
           this._cache.areas.map(a => `<option value="${a.id}">${a.nombre}</option>`).join('');
-      }
     },
 
     _poblarSelect: function(id, items, placeholder) {
@@ -49,7 +46,6 @@
     cargar: function() {
       document.getElementById('adm-ag-loader').classList.remove('hidden');
       document.getElementById('adm-ag-body').innerHTML = '';
-
       const filtros = {
         area_id: document.getElementById('adm-ag-filtro-area').value || undefined,
         estado: document.getElementById('adm-ag-filtro-estado').value
@@ -60,7 +56,8 @@
         .withSuccessHandler(res => {
           document.getElementById('adm-ag-loader').classList.add('hidden');
           if (!res.success) return Portal_Core.mostrarToast('error', 'Error', res.message);
-          this._renderizar(res.data);
+          this._todos = res.data || [];
+          this._filtrarLocal();
         })
         .withFailureHandler(err => {
           document.getElementById('adm-ag-loader').classList.add('hidden');
@@ -69,57 +66,63 @@
         .listarAgentesBackend(filtros);
     },
 
+    _filtrarLocal: function() {
+      const q = (document.getElementById('adm-ag-busqueda')?.value || '').toLowerCase();
+      const lista = q
+        ? this._todos.filter(a => (a.apellido + ' ' + a.nombre + ' ' + a.dni).toLowerCase().includes(q))
+        : this._todos;
+      this._renderizar(lista);
+    },
+
     _renderizar: function(agentes) {
       const body = document.getElementById('adm-ag-body');
       const AREAS = {};
       if (this._cache) this._cache.areas.forEach(a => AREAS[a.id] = a.nombre);
 
+      const total    = this._todos.length;
+      const activos  = this._todos.filter(a => a.estado).length;
+      const inactivos = total - activos;
+      const setTxt = (id, v) => { const el = document.getElementById(id); if(el) el.innerText = v; };
+      setTxt('adm-ag-stat-total', total);
+      setTxt('adm-ag-stat-activos', activos);
+      setTxt('adm-ag-stat-inactivos', inactivos);
+
       if (!agentes || agentes.length === 0) {
-        body.innerHTML = `<div style="text-align:center; padding:40px; color:var(--text-muted);">
-          <i class="fas fa-user-slash fa-3x" style="opacity:0.2; margin-bottom:15px;"></i>
-          <p>No se encontraron agentes con los filtros aplicados.</p></div>`;
+        body.innerHTML = `<div style="text-align:center;padding:40px;color:var(--text-muted);">
+          <i class="fas fa-user-slash fa-3x" style="opacity:0.2;margin-bottom:15px;"></i>
+          <p>No se encontraron agentes.</p></div>`;
         return;
       }
 
-      body.innerHTML = `<div style="font-size:0.8rem; color:var(--text-muted); margin-bottom:12px; text-align:right; font-weight:700;">${agentes.length} agentes</div>` +
-        agentes.map(a => {
-          const area = AREAS[a.area_id] || 'Sin área';
-          const estado = a.estado
-            ? '<span style="color:var(--success); font-weight:700;">Activo</span>'
-            : '<span style="color:var(--danger); font-weight:700;">Inactivo</span>';
-          const tieneUser = a.auth_id ? '<i class="fas fa-check-circle" style="color:var(--success); font-size:0.7rem;" title="Tiene usuario"></i>' : '';
-
+      const AV_COLORS = ['#7c3aed','#059669','#2563eb','#d97706','#db2777'];
+      body.innerHTML = `<div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:10px;text-align:right;font-weight:700;">
+        ${agentes.length} agente${agentes.length !== 1 ? 's' : ''}</div>` +
+        agentes.map((a, i) => {
+          const area  = AREAS[a.area_id] || 'Sin área';
+          const color = AV_COLORS[i % AV_COLORS.length];
+          const estadoChip = a.estado
+            ? '<span class="adm-ag-chip activo">Activo</span>'
+            : '<span class="adm-ag-chip inactivo">Inactivo</span>';
           return `
-          <div style="display:flex; justify-content:space-between; align-items:center;
-                      padding:14px 20px; border:1px solid var(--border-soft); border-radius:10px;
-                      margin-bottom:8px; background:var(--bg-surface); transition:0.2s;
-                      ${!a.estado ? 'opacity:0.6;' : ''}"
-               onmouseover="this.style.boxShadow='var(--shadow-sm)'"
-               onmouseout="this.style.boxShadow='none'">
-            <div style="display:flex; align-items:center; gap:14px; flex:1; min-width:0;">
-              <div style="width:40px; height:40px; border-radius:50%; background:var(--primary-light);
-                          display:flex; align-items:center; justify-content:center;
-                          font-weight:800; color:var(--primary); font-size:0.85rem; flex-shrink:0;">
-                ${(a.apellido||'S')[0]}${(a.nombre||'D')[0]}
-              </div>
-              <div style="min-width:0;">
-                <div style="font-weight:700; color:var(--text-main); font-size:0.9rem;">
-                  ${a.apellido}, ${a.nombre} ${tieneUser}
-                </div>
-                <div style="font-size:0.78rem; color:var(--text-muted); display:flex; gap:10px; flex-wrap:wrap; margin-top:2px;">
-                  <span><i class="fas fa-id-card" style="opacity:0.5;"></i> ${a.dni}</span>
-                  <span><i class="fas fa-building" style="opacity:0.5;"></i> ${area}</span>
-                  ${estado}
-                </div>
+          <div class="adm-ag-card" style="${!a.estado ? 'opacity:0.6;' : ''}">
+            <div class="adm-ag-avatar" style="background:${color}18;color:${color};">
+              ${(a.apellido||'S')[0]}${(a.nombre||'D')[0]}
+            </div>
+            <div style="flex:1;min-width:0;">
+              <div class="adm-ag-name">${a.apellido}, ${a.nombre}${a.auth_id ? ' <i class="fas fa-circle" style="font-size:0.5rem;color:var(--success);vertical-align:middle;" title="Tiene usuario"></i>' : ''}</div>
+              <div class="adm-ag-meta">
+                <span><i class="fas fa-id-card" style="opacity:0.5;margin-right:3px;"></i>${a.dni}</span>
+                <span class="adm-ag-chip area">${area}</span>
+                ${estadoChip}
               </div>
             </div>
-            <div style="display:flex; gap:8px; flex-shrink:0;">
-              <button class="btn btn-outline" style="padding:6px 10px; font-size:0.75rem;"
-                      onclick="event.stopPropagation(); AdminAgentes.editar('${a.id}')" title="Editar">
+            <div style="display:flex;gap:6px;">
+              <button class="btn btn-outline" style="padding:6px 10px;font-size:0.75rem;"
+                      onclick="event.stopPropagation();AdminAgentes.editar('${a.id}')" title="Editar">
                 <i class="fas fa-pencil-alt" style="color:var(--primary);"></i>
               </button>
-              <button class="btn btn-outline" style="padding:6px 10px; font-size:0.75rem;"
-                      onclick="event.stopPropagation(); AdminAgentes.toggleEstado('${a.id}', ${!a.estado}, '${a.apellido}, ${a.nombre}')"
+              <button class="btn btn-outline" style="padding:6px 10px;font-size:0.75rem;"
+                      onclick="event.stopPropagation();AdminAgentes.toggleEstado('${a.id}',${!a.estado},'${a.apellido}, ${a.nombre}')"
                       title="${a.estado ? 'Desactivar' : 'Activar'}">
                 <i class="fas ${a.estado ? 'fa-user-slash' : 'fa-user-check'}"
                    style="color:${a.estado ? 'var(--danger)' : 'var(--success)'};"></i>
@@ -129,69 +132,92 @@
         }).join('');
     },
 
-    // ═══════════════════════════════════
-    // MODAL: CREAR / EDITAR
-    // ═══════════════════════════════════
-    abrirModal: function() {
-      document.getElementById('ag-id').value = '';
-      document.getElementById('modal-ag-titulo').innerHTML = '<i class="fas fa-user-plus" style="color:var(--primary)"></i> Nuevo Agente';
+    _tab: function(i) {
+      document.querySelectorAll('.adm-tab-btn').forEach((b, idx) => b.classList.toggle('active', idx === i));
+      document.querySelectorAll('.adm-tab-panel').forEach((p, idx) => p.classList.toggle('active', idx === i));
+    },
 
-      // Limpiar campos
+    _toggleDiscapacidad: function() {
+      const cb  = document.getElementById('ag-discapacidad');
+      const det = document.getElementById('ag-disc-detalle');
+      if (!cb || !det) return;
+      // Si se llegó desde el onclick del row, el checkbox ya alternó; si llegó desde el input, usamos su estado
+      det.classList.toggle('hidden', !cb.checked);
+    },
+
+    abrirModal: function() {
+      // Asegurar que el modal esté en el body para bloquear toda la UI
+      const m = document.getElementById('modal-agente');
+      if (m && m.parentElement !== document.body) document.body.appendChild(m);
+
+      document.getElementById('ag-id').value = '';
+      document.getElementById('modal-ag-titulo').innerHTML =
+        '<i class="fas fa-user-plus" style="color:var(--primary)"></i> Nuevo Agente';
+
       ['ag-apellido','ag-nombre','ag-dni','ag-cuil','ag-fecha-nac','ag-telefono','ag-email',
-       'ag-domicilio','ag-titulo','ag-fecha-inicio','ag-fecha-venc'].forEach(id => {
+       'ag-domicilio','ag-titulo','ag-fecha-inicio','ag-fecha-venc','ag-hora-ingreso','ag-horas-laborales'].forEach(id => {
         const el = document.getElementById(id); if (el) el.value = '';
       });
       document.getElementById('ag-hijos').value = 0;
       document.getElementById('ag-discapacidad').checked = false;
       document.getElementById('ag-discapacidad-nombre').value = '';
-      document.getElementById('ag-discapacidad-nombre').classList.add('hidden');
+      document.getElementById('ag-disc-detalle').classList.add('hidden');
 
+      this._tab(0);
       this._poblarSelectsModal();
       document.getElementById('modal-agente').classList.remove('hidden');
     },
 
     _poblarSelectsModal: function() {
       if (!this._cache) return;
-      this._poblarSelect('ag-genero', this._cache.generos, 'Seleccione...');
-      this._poblarSelect('ag-estado-civil', this._cache.estados_civil, 'Seleccione...');
+      this._poblarSelect('ag-genero',        this._cache.generos,         'Seleccione...');
+      this._poblarSelect('ag-estado-civil',  this._cache.estados_civil,   'Seleccione...');
       this._poblarSelect('ag-nivel-estudio', this._cache.niveles_estudio, 'Seleccione...');
-      this._poblarSelect('ag-modalidad', this._cache.modalidades, 'Seleccione...');
-      this._poblarSelect('ag-delegacion', this._cache.delegaciones, 'Seleccione...');
-      this._poblarSelect('ag-area', this._cache.areas, 'Seleccione...');
-      this._poblarSelect('ag-cargo', this._cache.cargos, 'Seleccione...');
+      this._poblarSelect('ag-modalidad',     this._cache.modalidades,     'Seleccione...');
+      this._poblarSelect('ag-delegacion',    this._cache.delegaciones,    'Seleccione...');
+      this._poblarSelect('ag-area',          this._cache.areas,           'Seleccione...');
+      this._poblarSelect('ag-cargo',         this._cache.cargos,          'Seleccione...');
     },
 
     editar: function(id) {
+      // Asegurar modal en body
+      const m = document.getElementById('modal-agente');
+      if (m && m.parentElement !== document.body) document.body.appendChild(m);
+
       this._poblarSelectsModal();
-      document.getElementById('modal-ag-titulo').innerHTML = '<i class="fas fa-pencil-alt" style="color:var(--primary)"></i> Editar Agente';
+      this._tab(0);
+      document.getElementById('modal-ag-titulo').innerHTML =
+        '<i class="fas fa-pencil-alt" style="color:var(--primary)"></i> Editar Agente';
 
       google.script.run
         .withSuccessHandler(res => {
           if (!res.success) return Portal_Core.mostrarToast('error', 'Error', res.message);
           const a = res.data;
-          document.getElementById('ag-id').value = a.id;
-          document.getElementById('ag-apellido').value = a.apellido || '';
-          document.getElementById('ag-nombre').value = a.nombre || '';
-          document.getElementById('ag-dni').value = a.dni || '';
-          document.getElementById('ag-cuil').value = a.cuil || '';
-          document.getElementById('ag-fecha-nac').value = a.fecha_nacimiento || '';
-          document.getElementById('ag-genero').value = a.genero_id || '';
-          document.getElementById('ag-estado-civil').value = a.estado_civil_id || '';
-          document.getElementById('ag-hijos').value = a.hijos_a_cargo || 0;
-          document.getElementById('ag-telefono').value = a.telefono || '';
-          document.getElementById('ag-email').value = a.email || '';
-          document.getElementById('ag-domicilio').value = a.domicilio || '';
-          document.getElementById('ag-nivel-estudio').value = a.nivel_estudio_id || '';
-          document.getElementById('ag-titulo').value = a.titulo_obtenido || '';
-          document.getElementById('ag-delegacion').value = a.delegacion_id || '';
-          document.getElementById('ag-area').value = a.area_id || '';
-          document.getElementById('ag-cargo').value = a.cargo_id || '';
-          document.getElementById('ag-modalidad').value = a.modalidad_id || '';
-          document.getElementById('ag-fecha-inicio').value = a.fecha_inicio_sp || '';
-          document.getElementById('ag-fecha-venc').value = a.fecha_vencimiento_contrato || '';
+          document.getElementById('ag-id').value             = a.id;
+          document.getElementById('ag-apellido').value       = a.apellido || '';
+          document.getElementById('ag-nombre').value         = a.nombre || '';
+          document.getElementById('ag-dni').value            = a.dni || '';
+          document.getElementById('ag-cuil').value           = a.cuil || '';
+          document.getElementById('ag-fecha-nac').value      = a.fecha_nacimiento || '';
+          document.getElementById('ag-genero').value         = a.genero_id || '';
+          document.getElementById('ag-estado-civil').value   = a.estado_civil_id || '';
+          document.getElementById('ag-hijos').value          = a.hijos_a_cargo || 0;
+          document.getElementById('ag-telefono').value       = a.telefono || '';
+          document.getElementById('ag-email').value          = a.email || '';
+          document.getElementById('ag-domicilio').value      = a.domicilio || '';
+          document.getElementById('ag-nivel-estudio').value  = a.nivel_estudio_id || '';
+          document.getElementById('ag-titulo').value         = a.titulo_obtenido || '';
+          document.getElementById('ag-delegacion').value     = a.delegacion_id || '';
+          document.getElementById('ag-area').value           = a.area_id || '';
+          document.getElementById('ag-cargo').value          = a.cargo_id || '';
+          document.getElementById('ag-modalidad').value      = a.modalidad_id || '';
+          document.getElementById('ag-fecha-inicio').value   = a.fecha_inicio_sp || '';
+          document.getElementById('ag-fecha-venc').value     = a.fecha_vencimiento_contrato || '';
+          document.getElementById('ag-hora-ingreso').value   = a.hora_ingreso || '';
+          document.getElementById('ag-horas-laborales').value = a.horas_laborales || '';
           document.getElementById('ag-discapacidad').checked = a.discapacidad || false;
           document.getElementById('ag-discapacidad-nombre').value = a.discapacidad_nombre || '';
-          document.getElementById('ag-discapacidad-nombre').classList.toggle('hidden', !a.discapacidad);
+          document.getElementById('ag-disc-detalle').classList.toggle('hidden', !a.discapacidad);
 
           document.getElementById('modal-agente').classList.remove('hidden');
         })
@@ -200,9 +226,9 @@
 
     guardar: function() {
       const apellido = document.getElementById('ag-apellido').value.trim();
-      const nombre = document.getElementById('ag-nombre').value.trim();
-      const dni = document.getElementById('ag-dni').value.trim();
-      const cuil = document.getElementById('ag-cuil').value.trim();
+      const nombre   = document.getElementById('ag-nombre').value.trim();
+      const dni      = document.getElementById('ag-dni').value.trim();
+      const cuil     = document.getElementById('ag-cuil').value.trim();
 
       if (!apellido || !nombre) return Portal_Core.mostrarToast('warning', 'Validación', 'Apellido y nombre son obligatorios.');
       if (!dni || dni.length < 7) return Portal_Core.mostrarToast('warning', 'Validación', 'DNI inválido (7-8 dígitos).');
@@ -211,23 +237,25 @@
       const payload = {
         id: document.getElementById('ag-id').value || null,
         apellido, nombre, dni, cuil,
-        fecha_nacimiento: document.getElementById('ag-fecha-nac').value || null,
-        genero_id: document.getElementById('ag-genero').value || null,
-        estado_civil_id: document.getElementById('ag-estado-civil').value || null,
-        hijos_a_cargo: document.getElementById('ag-hijos').value,
-        telefono: document.getElementById('ag-telefono').value.trim() || null,
-        email: document.getElementById('ag-email').value.trim() || null,
-        domicilio: document.getElementById('ag-domicilio').value.trim() || null,
-        nivel_estudio_id: document.getElementById('ag-nivel-estudio').value || null,
-        titulo_obtenido: document.getElementById('ag-titulo').value.trim() || null,
-        delegacion_id: document.getElementById('ag-delegacion').value || null,
-        area_id: document.getElementById('ag-area').value || null,
-        cargo_id: document.getElementById('ag-cargo').value || null,
-        modalidad_id: document.getElementById('ag-modalidad').value || null,
-        fecha_inicio_sp: document.getElementById('ag-fecha-inicio').value || null,
+        fecha_nacimiento:           document.getElementById('ag-fecha-nac').value || null,
+        genero_id:                  document.getElementById('ag-genero').value || null,
+        estado_civil_id:            document.getElementById('ag-estado-civil').value || null,
+        hijos_a_cargo:              document.getElementById('ag-hijos').value,
+        telefono:                   document.getElementById('ag-telefono').value.trim() || null,
+        email:                      document.getElementById('ag-email').value.trim() || null,
+        domicilio:                  document.getElementById('ag-domicilio').value.trim() || null,
+        nivel_estudio_id:           document.getElementById('ag-nivel-estudio').value || null,
+        titulo_obtenido:            document.getElementById('ag-titulo').value.trim() || null,
+        delegacion_id:              document.getElementById('ag-delegacion').value || null,
+        area_id:                    document.getElementById('ag-area').value || null,
+        cargo_id:                   document.getElementById('ag-cargo').value || null,
+        modalidad_id:               document.getElementById('ag-modalidad').value || null,
+        fecha_inicio_sp:            document.getElementById('ag-fecha-inicio').value || null,
         fecha_vencimiento_contrato: document.getElementById('ag-fecha-venc').value || null,
-        discapacidad: document.getElementById('ag-discapacidad').checked,
-        discapacidad_nombre: document.getElementById('ag-discapacidad-nombre').value.trim() || null,
+        hora_ingreso:               document.getElementById('ag-hora-ingreso').value || null,
+        horas_laborales:            document.getElementById('ag-horas-laborales').value || null,
+        discapacidad:               document.getElementById('ag-discapacidad').checked,
+        discapacidad_nombre:        document.getElementById('ag-discapacidad-nombre').value.trim() || null,
         estado: true
       };
 
@@ -238,7 +266,7 @@
       google.script.run
         .withSuccessHandler(res => {
           btn.disabled = false;
-          btn.innerHTML = '<i class="fas fa-save" style="margin-right:6px;"></i> Guardar';
+          btn.innerHTML = '<i class="fas fa-save" style="margin-right:5px;"></i> Guardar';
           if (res.success) {
             Portal_Core.cerrarModal('modal-agente');
             Portal_Core.mostrarToast('success', 'Guardado', res.message);
@@ -249,26 +277,21 @@
         })
         .withFailureHandler(err => {
           btn.disabled = false;
-          btn.innerHTML = '<i class="fas fa-save" style="margin-right:6px;"></i> Guardar';
+          btn.innerHTML = '<i class="fas fa-save" style="margin-right:5px;"></i> Guardar';
           Portal_Core.mostrarToast('error', 'Error de Red', err.message);
         })
         .guardarAgenteBackend(payload);
     },
 
     toggleEstado: function(id, nuevoEstado, nombre) {
-      const accion = nuevoEstado ? 'activar' : 'desactivar';
       Portal_Core.mostrarConfirmacion(
         `¿${nuevoEstado ? 'Activar' : 'Desactivar'} agente?`,
-        `Se va a ${accion} a ${nombre}. ${!nuevoEstado ? 'No podrá acceder al sistema.' : ''}`,
+        `Se va a ${nuevoEstado ? 'activar' : 'desactivar'} a ${nombre}.`,
         () => {
           google.script.run
             .withSuccessHandler(res => {
-              if (res.success) {
-                Portal_Core.mostrarToast('success', 'Actualizado', res.message);
-                this.cargar();
-              } else {
-                Portal_Core.mostrarToast('error', 'Error', res.message);
-              }
+              if (res.success) { Portal_Core.mostrarToast('success', 'Actualizado', res.message); this.cargar(); }
+              else Portal_Core.mostrarToast('error', 'Error', res.message);
             })
             .toggleEstadoAgenteBackend(id, nuevoEstado);
         }
