@@ -36,21 +36,23 @@
     // CARGAR LISTA DE USUARIOS
     // =========================================================
     cargarUsuarios: function() {
-      document.getElementById('admin-usr-loader').classList.remove('hidden');
-      document.getElementById('admin-usr-tabla').classList.add('hidden');
+      const loader = document.getElementById('admin-usr-loader');
+      const tabla  = document.getElementById('admin-usr-tabla');
+      if (loader) loader.classList.remove('hidden');
+      if (tabla)  tabla.classList.add('hidden');
 
       google.script.run
         .withSuccessHandler(res => {
-          document.getElementById('admin-usr-loader').classList.add('hidden');
+          if (loader) loader.classList.add('hidden');
           if (!res.success) {
             Portal_Core.mostrarToast('error', 'Error', res.message);
             return;
           }
           this.renderizarTabla(res.data);
-          document.getElementById('admin-usr-tabla').classList.remove('hidden');
+          if (tabla) tabla.classList.remove('hidden');
         })
         .withFailureHandler(err => {
-          document.getElementById('admin-usr-loader').classList.add('hidden');
+          if (loader) loader.classList.add('hidden');
           Portal_Core.mostrarToast('error', 'Error de Red', err.message);
         })
         .listarUsuariosSistema();
@@ -104,6 +106,11 @@
           </div>
           <div style="display:flex; gap:8px;">
             <button class="btn btn-outline" style="padding:6px 10px; font-size:0.75rem;"
+                    onclick="AdminUsuarios.abrirEditar('${u.id}')"
+                    title="Editar tipo y permisos">
+              <i class="fas fa-pencil-alt" style="color:var(--primary);"></i>
+            </button>
+            <button class="btn btn-outline" style="padding:6px 10px; font-size:0.75rem;"
                     onclick="AdminUsuarios.abrirResetPassword('${u.username}', '${u.apellido}, ${u.nombre}')"
                     title="Resetear contraseña">
               <i class="fas fa-key" style="color:var(--warning);"></i>
@@ -113,7 +120,12 @@
                     onclick="AdminUsuarios.confirmarDesactivar('${u.id}', '${u.apellido}, ${u.nombre}')"
                     title="Desactivar usuario">
               <i class="fas fa-user-slash" style="color:var(--danger);"></i>
-            </button>` : ''}
+            </button>` : `
+            <button class="btn btn-outline" style="padding:6px 10px; font-size:0.75rem;"
+                    onclick="AdminUsuarios.confirmarReactivar('${u.id}', '${u.apellido}, ${u.nombre}')"
+                    title="Reactivar usuario">
+              <i class="fas fa-user-check" style="color:var(--success);"></i>
+            </button>`}
           </div>
         </div>`;
       }).join('');
@@ -268,6 +280,7 @@
     // =========================================================
     // DESACTIVAR USUARIO
     // =========================================================
+    
     confirmarDesactivar: function(usuarioId, nombre) {
       Portal_Core.mostrarConfirmacion(
         '¿Desactivar Usuario?',
@@ -283,6 +296,114 @@
               }
             })
             .desactivarUsuario(usuarioId);
+        }
+      );
+    },
+
+    // =========================================================
+    // MODAL: EDITAR USUARIO
+    // =========================================================
+    abrirEditar: function(usuarioId) {
+      var modal = document.getElementById('modal-editar-usuario');
+      if (!modal) return Portal_Core.mostrarToast('error', 'Error', 'Modal de edición no encontrado.');
+ 
+      var grid = document.getElementById('edit-usr-permisos-grid');
+      if (grid) grid.innerHTML = '<p style="color:var(--text-muted); font-size:0.8rem; text-align:center; padding:20px;"><i class="fas fa-circle-notch spinner"></i> Cargando...</p>';
+      modal.classList.remove('hidden');
+ 
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (!res.success) {
+            Portal_Core.cerrarModal('modal-editar-usuario');
+            Portal_Core.mostrarToast('error', 'Error', res.message);
+            return;
+          }
+          var d = res.data;
+          var u = d.usuario;
+ 
+          document.getElementById('edit-usr-id').value = u.id;
+          document.getElementById('edit-usr-nombre').innerText = (u.apellido || '') + ', ' + (u.nombre || '');
+          document.getElementById('edit-usr-dni-val').innerText = u.username;
+ 
+          // Poblar tipo de usuario
+          var selTipo = document.getElementById('edit-usr-tipo');
+          selTipo.innerHTML = d.tipos_usuario.map(function(t) {
+            return '<option value="' + t.id + '"' + (t.id === u.tipo_usuario_id ? ' selected' : '') + '>' + t.nombre + ' — ' + t.descripcion + '</option>';
+          }).join('');
+ 
+          // Poblar permisos con checks actuales
+          var grid = document.getElementById('edit-usr-permisos-grid');
+          grid.innerHTML = d.todos_permisos.map(function(p) {
+            var checked = d.permisos_actuales.indexOf(p.id) !== -1 ? ' checked' : '';
+            return '<label style="display:flex; align-items:center; gap:8px; padding:4px 0; font-size:0.82rem; cursor:pointer;">' +
+              '<input type="checkbox" value="' + p.id + '" class="edit-permiso-check"' + checked + '>' +
+              '<span style="font-weight:600; color:var(--text-main); min-width:130px;">' + p.clave_tecnica + '</span>' +
+              '<span style="color:var(--text-muted);">' + p.nombre + '</span>' +
+              '</label>';
+          }).join('');
+        })
+        .withFailureHandler(function(err) {
+          Portal_Core.cerrarModal('modal-editar-usuario');
+          Portal_Core.mostrarToast('error', 'Error de Red', err.message);
+        })
+        .obtenerUsuarioConPermisos(usuarioId);
+    },
+ 
+    seleccionarTodosPermisosEdit: function(valor) {
+      document.querySelectorAll('.edit-permiso-check').forEach(function(cb) { cb.checked = valor; });
+    },
+ 
+    guardarEdicion: function() {
+      var usuarioId = document.getElementById('edit-usr-id').value;
+      var tipoId    = document.getElementById('edit-usr-tipo').value;
+ 
+      var permisosIds = [];
+      document.querySelectorAll('.edit-permiso-check:checked').forEach(function(cb) {
+        permisosIds.push(cb.value);
+      });
+ 
+      var btn = document.getElementById('btn-guardar-edicion-usr');
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fas fa-circle-notch spinner"></i> Guardando...';
+ 
+      google.script.run
+        .withSuccessHandler(function(res) {
+          btn.disabled = false;
+          btn.innerHTML = '<i class="fas fa-save" style="margin-right:6px;"></i> Guardar Cambios';
+          if (res.success) {
+            Portal_Core.cerrarModal('modal-editar-usuario');
+            Portal_Core.mostrarToast('success', 'Actualizado', res.message);
+            AdminUsuarios.cargarUsuarios();
+          } else {
+            Portal_Core.mostrarToast('error', 'Error', res.message);
+          }
+        })
+        .withFailureHandler(function(err) {
+          btn.disabled = false;
+          btn.innerHTML = '<i class="fas fa-save" style="margin-right:6px;"></i> Guardar Cambios';
+          Portal_Core.mostrarToast('error', 'Error de Red', err.message);
+        })
+        .actualizarUsuarioCompleto(usuarioId, tipoId, permisosIds);
+    },
+ 
+    // =========================================================
+    // REACTIVAR USUARIO
+    // =========================================================
+    confirmarReactivar: function(usuarioId, nombre) {
+      Portal_Core.mostrarConfirmacion(
+        '¿Reactivar Usuario?',
+        'El usuario de ' + nombre + ' será reactivado y podrá ingresar al sistema nuevamente.',
+        function() {
+          google.script.run
+            .withSuccessHandler(function(res) {
+              if (res.success) {
+                Portal_Core.mostrarToast('success', 'Reactivado', res.message);
+                AdminUsuarios.cargarUsuarios();
+              } else {
+                Portal_Core.mostrarToast('error', 'Error', res.message);
+              }
+            })
+            .reactivarUsuario(usuarioId);
         }
       );
     }

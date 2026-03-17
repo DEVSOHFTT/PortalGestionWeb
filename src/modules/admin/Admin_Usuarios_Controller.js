@@ -105,7 +105,8 @@ function crearUsuarioSistema(payload) {
 
 /**
  * Listar usuarios del sistema con sus permisos
- */
+*/
+
 function listarUsuariosSistema() {
   try {
     const data = supabaseFetch('v_user', 'GET', null, '?select=id,username,estado,tipo_usuario_id,nombre,apellido,area_id,accesos&order=apellido.asc');
@@ -117,7 +118,8 @@ function listarUsuariosSistema() {
 
 /**
  * Obtener datos para el formulario (agentes sin usuario + tipos + permisos)
- */
+*/
+
 function obtenerDiccionariosUsuarios() {
   try {
     const agentes = supabaseFetch('agentes', 'GET', null,
@@ -142,7 +144,8 @@ function obtenerDiccionariosUsuarios() {
 
 /**
  * Actualizar permisos de un usuario existente
- */
+*/
+
 function actualizarPermisosUsuario(usuarioId, permisosIds) {
   try {
     // Borrar permisos actuales
@@ -165,7 +168,8 @@ function actualizarPermisosUsuario(usuarioId, permisosIds) {
 
 /**
  * Desactivar usuario (no borra — soft disable)
- */
+*/
+
 function desactivarUsuario(usuarioId) {
   try {
     supabaseFetch('usuarios', 'PATCH', { estado: false }, `?id=eq.${usuarioId}`);
@@ -177,7 +181,8 @@ function desactivarUsuario(usuarioId) {
 
 /**
  * Resetear contraseña de un usuario
- */
+*/
+
 function resetearPasswordUsuario(dni, nuevoPassword) {
   try {
     const config = _getSupabaseConfig();
@@ -218,6 +223,77 @@ function resetearPasswordUsuario(dni, nuevoPassword) {
     }
 
     return { success: true, message: 'Contraseña actualizada exitosamente.' };
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+}
+
+/**
+ * Obtener datos de un usuario con sus permisos actuales (para el modal de edición)
+*/
+
+function obtenerUsuarioConPermisos(usuarioId) {
+  try {
+    const usuario = supabaseFetch('v_user', 'GET', null, `?id=eq.${usuarioId}&limit=1`);
+    if (!usuario || usuario.length === 0) throw new Error('Usuario no encontrado.');
+ 
+    const permisosActuales = supabaseFetch('usuarios_permisos', 'GET', null,
+      `?usuario_id=eq.${usuarioId}&select=permiso_id`);
+ 
+    const todosPermisos = supabaseFetch('permisos', 'GET', null, '?select=*&order=clave_tecnica.asc');
+    const tiposUsuario = supabaseFetch('tipos_usuario', 'GET', null, '?select=*&order=id.asc');
+ 
+    return {
+      success: true,
+      data: {
+        usuario: usuario[0],
+        permisos_actuales: (permisosActuales || []).map(p => p.permiso_id),
+        todos_permisos: todosPermisos || [],
+        tipos_usuario: tiposUsuario || []
+      }
+    };
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+}
+
+/**
+ * Actualizar tipo de usuario + permisos
+*/
+
+function actualizarUsuarioCompleto(usuarioId, tipoUsuarioId, permisosIds) {
+  try {
+    // Actualizar tipo de usuario
+    supabaseFetch('usuarios', 'PATCH',
+      { tipo_usuario_id: parseInt(tipoUsuarioId) },
+      `?id=eq.${usuarioId}`
+    );
+ 
+    // Reemplazar permisos
+    supabaseFetch('usuarios_permisos', 'DELETE', null, `?usuario_id=eq.${usuarioId}`);
+ 
+    if (permisosIds && permisosIds.length > 0) {
+      const payload = permisosIds.map(pid => ({
+        usuario_id: usuarioId,
+        permiso_id: parseInt(pid)
+      }));
+      supabaseFetch('usuarios_permisos', 'POST', payload);
+    }
+ 
+    return { success: true, message: 'Usuario actualizado correctamente.' };
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+}
+
+/**
+ * Reactivar usuario desactivado
+ */
+
+function reactivarUsuario(usuarioId) {
+  try {
+    supabaseFetch('usuarios', 'PATCH', { estado: true }, `?id=eq.${usuarioId}`);
+    return { success: true, message: 'Usuario reactivado.' };
   } catch (e) {
     return { success: false, message: e.message };
   }

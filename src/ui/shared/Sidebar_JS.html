@@ -1,12 +1,4 @@
 <script>
-  /**
-   * ========================================================================
-   * Sidebar_JS.html
-   * PROYECTO: Portal de Gestión - Defensoría del Pueblo
-   * RESPONSABILIDAD: Control completo del menú lateral (sidebar).
-   * ========================================================================
-   */
-
   window.Portal_Core = window.Portal_Core || {};
 
   Object.assign(window.Portal_Core, {
@@ -45,6 +37,13 @@
            <i class="fas ${icono}"></i> ${label}
          </li>`;
 
+      const itemDisabled = (icono, label) =>
+        `<li style="opacity:0.4; cursor:default; pointer-events:none;">
+           <i class="fas ${icono}"></i> ${label}
+           <span style="font-size:0.65rem; margin-left:auto; background:var(--warning);
+                        color:white; padding:1px 6px; border-radius:8px;">Pronto</span>
+         </li>`;
+
       if (codigoModulo === 'ATC') {
         menu.innerHTML = `
           ${seccion('Atención al Ciudadano')}
@@ -56,21 +55,25 @@
         `;
       }
 
-      else if (codigoModulo === 'INV') {
-        // Sin ítem separado de scanner — está integrado en la Bandeja
+      else if (codigoModulo === 'ADMIN') {
         menu.innerHTML = `
-          ${seccion('Inventario General')}
-          ${item('InventarioBandeja', 'fa-boxes', 'Activos e Insumos')}
+          ${seccion('Recursos Humanos')}
+          ${item('AdminAgentes',  'fa-id-badge',   'Agentes')}
+          ${item('AdminUsuarios', 'fa-users-cog',  'Usuarios')}
+          ${seccion('Infraestructura')}
+          ${item('InventarioBandeja', 'fa-boxes',  'Inventario')}
+          ${seccion('Configuración')}
+          ${itemDisabled('fa-cogs', 'Catálogos')}
         `;
       }
-
     },
 
     marcarItemActivo: function(accionLogica) {
       document.querySelectorAll('.menu li').forEach(li => li.classList.remove('active'));
       const itemActivo = document.getElementById('m-' + accionLogica);
-      // InventarioScan y InventarioBandeja activan el mismo ítem
-      const target = itemActivo || document.getElementById('m-InventarioBandeja');
+      const target = itemActivo
+        || document.getElementById('m-InventarioBandeja')
+        || document.getElementById('m-AdminAgentes');
       if (target) target.classList.add('active');
     }
 

@@ -1,34 +1,38 @@
 <script>
   /**
    * ========================================================================
-   * Router_JS.html
-   * PROYECTO: Portal de Gestión - Defensoría del Pueblo
+   * Router_JS.html — V2.1
+   * ========================================================================
+   * Cambios:
+   *   • Inventario ahora usa sidebar ADMIN (no INV propio)
+   *   • AdminAgentes y AdminUsuarios registrados
    * ========================================================================
    */
 
   const MAPA_MODULOS = {
     // -- ATC --
-    MisCasos:            { sidebar: 'ATC', topbar: true,  init: (p) => ATC_App.iniciarBandeja('MisCasos') },
-    MiArea:              { sidebar: 'ATC', topbar: true,  init: (p) => ATC_App.iniciarBandeja('MiArea') },
-    TodosLosCasos:       { sidebar: 'ATC', topbar: true,  init: (p) => ATC_App.iniciarBandeja('TodosLosCasos') },
-    DetalleCaso:         { sidebar: 'ATC', topbar: true,  init: (p) => ATC_App.iniciarDetalle(p) },
-    BuscarCiudadano:     { sidebar: 'ATC', topbar: true,  init: (p) => ATC_App.iniciarBuscarCiudadano() },
-    NuevaRecepcionPaso2: { sidebar: 'ATC', topbar: true,  init: (p) => ATC_App.iniciarNuevaRecepcionPaso2() },
-    FichaCiudadano:      { sidebar: 'ATC', topbar: true,  init: (p) => ATC_App.iniciarFichaCiudadano(p) },
-
-    // -- Inventario --
-    InventarioBandeja:   { sidebar: 'INV', topbar: true,  init: (p) => INV_App.iniciarBandeja() },
-    InventarioScan:      { sidebar: 'INV', topbar: true,  init: (p) => INV_App.iniciarBandeja() },  // redirige a Bandeja
-    InventarioFicha:     { sidebar: 'INV', topbar: true,  init: (p) => INV_App.iniciarFicha(p) },
+    MisCasos:            { sidebar: 'ATC',   topbar: true, init: (p) => ATC_App.iniciarBandeja('MisCasos') },
+    MiArea:              { sidebar: 'ATC',   topbar: true, init: (p) => ATC_App.iniciarBandeja('MiArea') },
+    TodosLosCasos:       { sidebar: 'ATC',   topbar: true, init: (p) => ATC_App.iniciarBandeja('TodosLosCasos') },
+    DetalleCaso:         { sidebar: 'ATC',   topbar: true, init: (p) => ATC_App.iniciarDetalle(p) },
+    BuscarCiudadano:     { sidebar: 'ATC',   topbar: true, init: (p) => ATC_App.iniciarBuscarCiudadano() },
+    NuevaRecepcionPaso2: { sidebar: 'ATC',   topbar: true, init: (p) => ATC_App.iniciarNuevaRecepcionPaso2() },
+    FichaCiudadano:      { sidebar: 'ATC',   topbar: true, init: (p) => ATC_App.iniciarFichaCiudadano(p) },
 
     // -- Administración --
-    AdminUsuarios:       { sidebar: null,  topbar: true,  init: (p) => AdminUsuarios.iniciar() },
+    AdminAgentes:        { sidebar: 'ADMIN', topbar: true, init: (p) => AdminAgentes.iniciar() },
+    AdminUsuarios:       { sidebar: 'ADMIN', topbar: true, init: (p) => AdminUsuarios.iniciar() },
 
-    // -- Hub: muestra topbar pero NO sidebar --
-    PortalHome:          { sidebar: null,  topbar: true,  init: (p) => {} },
+    // -- Inventario (ahora bajo sidebar ADMIN) --
+    InventarioBandeja:   { sidebar: 'ADMIN', topbar: true, init: (p) => INV_App.iniciarBandeja() },
+    InventarioScan:      { sidebar: 'ADMIN', topbar: true, init: (p) => INV_App.iniciarBandeja() },
+    InventarioFicha:     { sidebar: 'ADMIN', topbar: true, init: (p) => INV_App.iniciarFicha(p) },
 
-    // -- Login: sin topbar ni sidebar --
-    Login:               { sidebar: null,  topbar: false, init: (p) => {} },
+    // -- Hub --
+    PortalHome:          { sidebar: null,    topbar: true, init: (p) => {} },
+
+    // -- Login --
+    Login:               { sidebar: null,    topbar: false, init: (p) => {} },
   };
 
   function cargarModulo(accionLogica, paramExtra = null) {
@@ -50,10 +54,8 @@
       const sidebar = document.getElementById('sidebar');
       const topbar  = document.getElementById('topbar');
 
-      // Sidebar: visible solo si la ruta tiene módulo
       if (sidebar) sidebar.classList.toggle('hidden', !ruta.sidebar);
 
-      // Topbar: visible según la propiedad topbar de la ruta (default true)
       const mostrarTopbar = ruta.topbar !== false;
       if (topbar) topbar.classList.toggle('hidden', !mostrarTopbar);
 
