@@ -1,33 +1,39 @@
 <script>
   /**
    * ========================================================================
-   * Inventario_Scan_JS.html
+   * Inventario_Scan_JS.html  — v2.1 (fix)
    * PROYECTO: Portal de Gestión - Defensoría del Pueblo
-   * RESPONSABILIDAD: Lógica del escáner QR del módulo Inventario.
-   *   - Inicialización de la vista de scan.
-   *   - Apertura del popup externo con cámara (workaround iframe GAS).
-   *   - Listener de mensajes postMessage desde el popup.
-   *   - Entrada manual de código.
-   *   - Limpieza de recursos (popup, stream, listeners).
-   *   - No conoce la lógica de Bandeja ni de Ficha.
-   *   - Depende de: AppState_JS (INV_App.estadoActual),
-   *                 Core_JS (mostrarToast, reproducirSonido).
+   * CAMBIOS v2.1:
+   *   • FIX PRINCIPAL: el listener de postMessage ahora llama automáticamente
+   *     a procesarCodigoManual() después de setear el valor en el input.
+   *     Antes el QR se mostraba solo en la notificación y en el campo,
+   *     pero no navegaba a la ficha del activo.
+   *   • Toast cambia de 'success' a 'info' para no confundir al usuario
+   *     (la acción real aún está en curso — la navegación).
+   *   • Guard defensivo igual que en Bandeja_JS.
    * ========================================================================
    */
+
+  // ── Guard defensivo ──────────────────────────────────────────────────────
+  if (!window.INV_App || typeof window.INV_App !== 'object') {
+    console.warn('[INV Scan] INV_App no encontrado — creando namespace de emergencia.');
+    window.INV_App = {};
+  }
+  // ────────────────────────────────────────────────────────────────────────
 
   Object.assign(window.INV_App, {
 
     // =========================================================
     // ESTADO INTERNO DEL SCANNER
     // =========================================================
-    _popupQR:          null,
-    _listenerMensaje:  null,
-    _stream:           null,
+    _popupQR:         null,
+    _listenerMensaje: null,
+    _stream:          null,
 
     // =========================================================
     // INICIALIZACIÓN DE LA VISTA SCAN
     // =========================================================
-    iniciarScan: function() {
+    iniciarScan: function () {
       document.getElementById('ruta-actual').innerText = 'Escanear Activo';
       this.detenerCamaraEnVivo();
     },
@@ -35,7 +41,7 @@
     // =========================================================
     // ENTRADA MANUAL DE CÓDIGO
     // =========================================================
-    procesarCodigoManual: function() {
+    procesarCodigoManual: function () {
       const input = document.getElementById('manual-qr-input');
       const id    = input ? input.value.trim().toUpperCase() : '';
       if (!id) return Portal_Core.mostrarToast('warning', 'Dato Requerido', 'Ingresá un código válido.');
@@ -44,12 +50,13 @@
 
     // =========================================================
     // APERTURA DEL POPUP DE CÁMARA
-    // Contexto: GAS sirve el portal en un iframe con Feature-Policy
+    // =========================================================
+    // CONTEXTO: GAS sirve el portal en un iframe con Feature-Policy
     // que bloquea getUserMedia. La solución es abrir un popup
     // top-level donde el permiso de cámara sí funciona.
     // El popup lee el QR y devuelve el resultado via postMessage.
     // =========================================================
-    abrirCamaraEnVivo: function() {
+    abrirCamaraEnVivo: function () {
       const inputEl = document.getElementById('manual-qr-input');
       if (inputEl) inputEl.value = '';
 
@@ -72,55 +79,50 @@
              overflow: hidden; background: #000; aspect-ratio: 1; }
     video  { width: 100%; height: 100%; object-fit: cover; display: block; }
     canvas { display: none; }
-    .mira  { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
-             width: 60%; aspect-ratio: 1; border: 3px solid #818cf8; border-radius: 12px;
-             box-shadow: 0 0 0 2000px rgba(0,0,0,0.45); pointer-events: none; }
-    .esquina { position: absolute; width: 20px; height: 20px; border-color: #6366f1; border-style: solid; }
-    .esquina.tl { top: 0; left: 0;  border-width: 3px 0 0 3px; border-radius: 4px 0 0 0; }
-    .esquina.tr { top: 0; right: 0; border-width: 3px 3px 0 0; border-radius: 0 4px 0 0; }
-    .esquina.bl { bottom: 0; left: 0;  border-width: 0 0 3px 3px; border-radius: 0 0 0 4px; }
-    .esquina.br { bottom: 0; right: 0; border-width: 0 3px 3px 0; border-radius: 0 0 4px 0; }
-    #estado { margin-top: 16px; font-size: 0.8rem; color: #64748b; min-height: 20px; text-align: center; }
-    #estado.ok  { color: #4ade80; font-weight: 700; }
+    .mira  { position: absolute; inset: 0; display: flex; align-items: center;
+             justify-content: center; pointer-events: none; }
+    .mira svg { width: 65%; height: 65%; opacity: 0.7; }
+    #estado { margin-top: 18px; font-size: 0.9rem; font-weight: 600;
+              color: #94a3b8; text-align: center; min-height: 1.4em; }
+    #estado.ok  { color: #4ade80; }
     #estado.err { color: #f87171; }
-    button { margin-top: 20px; padding: 10px 28px; background: #4f46e5; color: white;
-             border: none; border-radius: 10px; font-size: 0.9rem; font-weight: 600; cursor: pointer; }
-    button:hover { background: #4338ca; }
   </style>
 </head>
 <body>
-  <h2>Escanear Código QR</h2>
-  <p>Enfocá el código QR del activo.<br>La ventana se cerrará automáticamente.</p>
+  <h2>📷 Escanear código QR</h2>
+  <p>Apuntá la cámara al código QR del activo</p>
   <div id="visor">
-    <video id="v" autoplay muted playsinline></video>
-    <canvas id="c"></canvas>
+    <video id="video" muted playsinline autoplay></video>
+    <canvas id="canvas"></canvas>
     <div class="mira">
-      <div class="esquina tl"></div><div class="esquina tr"></div>
-      <div class="esquina bl"></div><div class="esquina br"></div>
+      <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M10 30 L10 10 L30 10" stroke="white" stroke-width="4" stroke-linecap="round"/>
+        <path d="M70 10 L90 10 L90 30" stroke="white" stroke-width="4" stroke-linecap="round"/>
+        <path d="M90 70 L90 90 L70 90" stroke="white" stroke-width="4" stroke-linecap="round"/>
+        <path d="M30 90 L10 90 L10 70" stroke="white" stroke-width="4" stroke-linecap="round"/>
+      </svg>
     </div>
   </div>
-  <div id="estado">Iniciando cámara...</div>
-  <button onclick="window.close()">Cancelar</button>
-
-  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"><\/script>
+  <div id="estado">Iniciando cámara…</div>
   <script>
-    const video  = document.getElementById('v');
-    const canvas = document.getElementById('c');
-    const estado = document.getElementById('estado');
-    let rafId = null, streamActivo = null, detectando = true;
+    const video    = document.getElementById('video');
+    const canvas   = document.getElementById('canvas');
+    const estado   = document.getElementById('estado');
+
+    let detectando   = true;
+    let rafId        = null;
+    let streamActivo = null;
 
     async function iniciar() {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 1280 } },
-          audio: false
+        streamActivo = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
         });
-        streamActivo = stream;
-        video.srcObject = stream;
+        video.srcObject = streamActivo;
         await video.play();
-        estado.textContent = 'Buscando código QR...';
+        estado.textContent = 'Buscando código QR…';
 
-        const usarNativa = 'BarcodeDetector' in window;
+        const usarNativa = ('BarcodeDetector' in window);
         const detector   = usarNativa ? new BarcodeDetector({ formats: ['qr_code'] }) : null;
         const ctx        = canvas.getContext('2d');
         let ultimoFrame  = 0;
@@ -142,10 +144,11 @@
               if (lista.length > 0) resultado = lista[0].rawValue;
             } else {
               const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-              const code    = jsQR(imgData.data, imgData.width, imgData.height, { inversionAttempts: 'dontInvert' });
+              const code    = jsQR(imgData.data, imgData.width, imgData.height,
+                                   { inversionAttempts: 'dontInvert' });
               if (code) resultado = code.data;
             }
-          } catch(e) {}
+          } catch (e) { /* continuar */ }
 
           if (resultado) {
             detectando = false;
@@ -154,7 +157,10 @@
             estado.textContent = 'Código leído: ' + resultado;
             estado.className   = 'ok';
             if (window.opener && !window.opener.closed) {
-              window.opener.postMessage({ tipo: 'QR_RESULT', valor: resultado.trim().toUpperCase() }, '*');
+              window.opener.postMessage(
+                { tipo: 'QR_RESULT', valor: resultado.trim().toUpperCase() },
+                '*'
+              );
             }
             setTimeout(() => window.close(), 800);
             return;
@@ -162,9 +168,17 @@
           rafId = requestAnimationFrame(scan);
         };
 
-        rafId = requestAnimationFrame(scan);
+        // Cargar jsQR como fallback si BarcodeDetector no está disponible
+        if (!usarNativa) {
+          const s = document.createElement('script');
+          s.src = 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js';
+          s.onload = () => { rafId = requestAnimationFrame(scan); };
+          document.head.appendChild(s);
+        } else {
+          rafId = requestAnimationFrame(scan);
+        }
 
-      } catch(err) {
+      } catch (err) {
         const msg = err.name === 'NotAllowedError'
           ? 'Permiso de cámara denegado. Revisá la configuración del navegador.'
           : 'Error: ' + err.message;
@@ -209,23 +223,37 @@
       this._popupQR.document.write(htmlPopup);
       this._popupQR.document.close();
 
-      // Listener: recibir el QR desde el popup
+      // ─────────────────────────────────────────────────────────────────
+      // FIX v2.1: recibir el QR y NAVEGAR automáticamente a la ficha.
+      // Antes: solo mostraba toast + seteaba el input → el usuario tenía
+      //        que presionar el botón de búsqueda manualmente.
+      // Ahora: setea el input (feedback visual), muestra toast informativo
+      //        y llama a procesarCodigoManual() que dispara cargarModulo().
+      // ─────────────────────────────────────────────────────────────────
       this._listenerMensaje = (event) => {
         if (!event.data || event.data.tipo !== 'QR_RESULT') return;
 
+        const valor   = event.data.valor;
         const inputEl = document.getElementById('manual-qr-input');
         if (inputEl) {
-          inputEl.value = event.data.valor;
+          inputEl.value = valor;
           inputEl.style.backgroundColor = '#fef08a';
-          setTimeout(() => inputEl.style.backgroundColor = '', 1200);
+          setTimeout(() => { inputEl.style.backgroundColor = ''; }, 1200);
         }
 
         Portal_Core.reproducirSonido('success');
-        Portal_Core.mostrarToast('success', 'QR Leído', 'Código: ' + event.data.valor);
+        // Info en lugar de success: la navegación aún no terminó
+        Portal_Core.mostrarToast('info', 'QR Leído', 'Abriendo ficha: ' + valor);
 
+        // Limpiar listener y referencia al popup ANTES de navegar
         window.removeEventListener('message', this._listenerMensaje);
         this._listenerMensaje = null;
-        this._popupQR = null;
+        this._popupQR         = null;
+
+        // ✅ FIX: navegar automáticamente a la ficha del activo
+        if (typeof INV_App.procesarCodigoManual === 'function') {
+          INV_App.procesarCodigoManual();
+        }
       };
 
       window.addEventListener('message', this._listenerMensaje);
@@ -233,9 +261,8 @@
 
     // =========================================================
     // LIMPIEZA DE RECURSOS DEL SCANNER
-    // Llamado al salir de la vista Scan o al entrar a Ficha/Bandeja.
     // =========================================================
-    detenerCamaraEnVivo: function() {
+    detenerCamaraEnVivo: function () {
       if (this._popupQR && !this._popupQR.closed) this._popupQR.close();
       this._popupQR = null;
 
@@ -249,6 +276,7 @@
         this._stream = null;
       }
 
+      // Restaurar la vista de la pantalla de scan si existe
       const promptCard = document.getElementById('scan-prompt-card');
       const liveCard   = document.getElementById('live-camera-card');
       if (promptCard) promptCard.classList.remove('hidden');

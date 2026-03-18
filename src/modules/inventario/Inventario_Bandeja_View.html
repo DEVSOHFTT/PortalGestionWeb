@@ -1,229 +1,180 @@
-<style>
-  .inv-stats-row { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:1.25rem; }
-  .inv-stat-card { background:var(--bg-surface); border:1px solid var(--border-soft); border-radius:10px; padding:11px 14px; display:flex; align-items:center; gap:10px; }
-  .inv-stat-icon { width:34px; height:34px; border-radius:8px; display:flex; align-items:center; justify-content:center; flex-shrink:0; font-size:0.82rem; }
-  .inv-stat-icon.p { background:var(--primary-light); color:var(--primary); }
-  .inv-stat-icon.g { background:#EAF3DE; color:#3B6D11; }
-  .inv-stat-icon.a { background:#FAEEDA; color:#854F0B; }
-  .inv-stat-icon.r { background:#FCEBEB; color:#A32D2D; }
-  .inv-stat-label { font-size:0.68rem; color:var(--text-muted); font-weight:700; text-transform:uppercase; }
-  .inv-stat-val   { font-size:1.15rem; font-weight:800; color:var(--text-main); }
+<div class="fade-in">
 
-  .inv-qr-bar { display:flex; align-items:center; gap:10px; margin-bottom:1rem; padding:10px 14px;
-    background:var(--bg-surface); border:1px solid var(--border-soft);
-    border-left:3px solid var(--def-orange); border-radius:10px; }
-  .inv-qr-label { font-size:0.7rem; font-weight:800; color:var(--def-orange); text-transform:uppercase;
-    letter-spacing:0.04em; white-space:nowrap; display:flex; align-items:center; gap:5px; }
-  .inv-qr-divider { width:1px; height:18px; background:var(--border-soft); }
-  .inv-qr-bar input { flex:1; border:none; background:transparent; font-size:0.85rem; color:var(--text-main);
-    outline:none; font-family:monospace; font-weight:700; text-transform:uppercase; min-width:0; }
-
-  .inv-toolbar { display:flex; align-items:center; gap:8px; margin-bottom:1rem; flex-wrap:wrap; }
-  .inv-search-wrap { flex:1; min-width:130px; position:relative; }
-  .inv-search-wrap input { width:100%; padding:8px 10px 8px 28px; border:1px solid var(--border-soft);
-    border-radius:8px; font-size:0.82rem; background:var(--bg-surface); color:var(--text-main); outline:none; }
-  .inv-search-icon { position:absolute; left:8px; top:50%; transform:translateY(-50%); color:var(--text-muted); font-size:0.75rem; pointer-events:none; }
-
-  /* Cards de artículos */
-  .card-inv-item { background:var(--bg-surface); border:1px solid var(--border-soft); border-radius:12px;
-    padding:14px 16px; margin-bottom:10px; cursor:pointer; transition:all 0.15s ease; }
-  .card-inv-item:hover { transform:translateY(-1px); box-shadow:var(--shadow-md); border-color:var(--border-hard); }
-  .inv-id-chip { font-size:0.7rem; font-weight:700; padding:2px 8px; border-radius:20px;
-    background:var(--primary-light); color:var(--primary); font-family:monospace; white-space:nowrap; }
-  .inv-cat-chip { font-size:0.7rem; font-weight:700; padding:2px 8px; border-radius:20px;
-    background:var(--bg-app); color:var(--text-muted); }
-  .inv-stock-chip { font-size:0.7rem; font-weight:700; padding:2px 8px; border-radius:20px; }
-  .inv-stock-ok   { background:#EAF3DE; color:#3B6D11; }
-  .inv-stock-low  { background:#FAEEDA; color:#854F0B; }
-  .inv-stock-zero { background:#FCEBEB; color:#A32D2D; }
-
-  /* Modal sections */
-  .inv-fsec { display:flex; align-items:center; gap:7px; font-size:0.68rem; font-weight:800;
-    text-transform:uppercase; letter-spacing:0.06em; color:var(--primary);
-    margin:0.9rem 0 7px; padding-bottom:5px; border-bottom:1px solid var(--border-soft); }
-  .inv-suaf-tag { font-size:0.62rem; padding:1px 6px; background:var(--primary-light); color:var(--primary);
-    border-radius:4px; font-weight:700; letter-spacing:0.02em; margin-left:auto; }
-</style>
-
-<div class="fade-in" style="padding:16px 16px 60px;">
-
-  <!-- STATS -->
-  <div class="inv-stats-row">
-    <div class="inv-stat-card">
-      <div class="inv-stat-icon p"><i class="fas fa-boxes"></i></div>
-      <div><div class="inv-stat-label">Total artículos</div><div class="inv-stat-val" id="inv-stat-total">—</div></div>
+  <div class="header-bandeja" style="margin-bottom: 20px;">
+    <div>
+      <h2 style="font-size: 1.75rem; font-weight: 800; color: var(--text-main); letter-spacing: -0.02em;">Inventario General</h2>
+      <p style="color: var(--text-muted); font-size: 0.95rem; margin-top: 4px;">Gestión de activos, insumos y equipos de la institución</p>
     </div>
-    <div class="inv-stat-card">
-      <div class="inv-stat-icon g"><i class="fas fa-check-circle"></i></div>
-      <div><div class="inv-stat-label">Disponibles</div><div class="inv-stat-val" id="inv-stat-disp">—</div></div>
-    </div>
-    <div class="inv-stat-card">
-      <div class="inv-stat-icon a"><i class="fas fa-user-tie"></i></div>
-      <div><div class="inv-stat-label">Asignados</div><div class="inv-stat-val" id="inv-stat-asig">—</div></div>
-    </div>
-    <div class="inv-stat-card">
-      <div class="inv-stat-icon r"><i class="fas fa-tools"></i></div>
-      <div><div class="inv-stat-label">Mantenimiento</div><div class="inv-stat-val" id="inv-stat-mant">—</div></div>
+    
+    <div style="display: flex; gap: 8px; align-items: center;">
+      <div class="search-box" style="width: 320px;">
+        <i class="fas fa-search"></i>
+        <input type="text" id="inv-filtro-texto" placeholder="Buscar Marca, Modelo o ID..." 
+               onkeyup="INV_App.filtrarBandejaDebounced()"
+               onkeypress="if(event.key==='Enter'){event.preventDefault();window.INV_App.procesarCodigoManual();}">
+      </div>
+      <button class="btn btn-primary" onclick="INV_App.abrirCamaraEnVivo()" style="height: 48px; padding: 0 16px; border-radius: 8px; box-shadow: var(--shadow-sm);" title="Escanear Código QR">
+        <i class="fas fa-qrcode"></i>
+      </button>
     </div>
   </div>
 
-  <!-- QR BAR -->
-  <div class="inv-qr-bar">
-    <div class="inv-qr-label"><i class="fas fa-qrcode"></i> QR / ID</div>
-    <div class="inv-qr-divider"></div>
-    <input type="text" id="manual-qr-input"
-           placeholder="Escribir o escanear código de artículo..."
-           onkeypress="if(event.key==='Enter'){event.preventDefault();window.INV_App.procesarCodigoManual();}">
-    <button class="btn btn-primary" onclick="INV_App.abrirCamaraEnVivo()"
-            style="gap:6px;padding:8px 14px;white-space:nowrap;flex-shrink:0;">
-      <i class="fas fa-camera"></i> Cámara
-    </button>
-    <button class="btn btn-outline" onclick="INV_App.procesarCodigoManual()"
-            style="padding:8px 12px;flex-shrink:0;" title="Buscar">
-      <i class="fas fa-search"></i>
-    </button>
-  </div>
-
-  <!-- TOOLBAR -->
-  <div class="inv-toolbar">
-    <select id="inv-filtro-categoria" class="form-input" style="max-width:160px;font-size:0.82rem;"
-            onchange="INV_App.cargarDatosBandeja()"></select>
-    <select id="inv-filtro-edificio" class="form-input" style="max-width:150px;font-size:0.82rem;"
-            onchange="INV_App.cargarDatosBandeja()"></select>
-    <select id="inv-filtro-agente" class="form-input" style="max-width:180px;font-size:0.82rem;"
-            onchange="INV_App.filtrarBandejaDebounced()"></select>
-    <div class="inv-search-wrap">
-      <i class="fas fa-search inv-search-icon"></i>
-      <input type="text" id="inv-filtro-texto" placeholder="Marca, modelo, serie..."
-             onkeyup="INV_App.filtrarBandejaDebounced()">
+  <div class="ficha-card" style="margin-bottom: 25px; padding: 20px; border-top: 4px solid var(--primary);">
+    <div style="font-size: 0.85rem; font-weight: 800; color: var(--text-main); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 18px; display: flex; justify-content: space-between; align-items: center;">
+      <span><i class="fas fa-filter" style="color: var(--primary); margin-right: 6px;"></i> Filtros y Estadísticas</span>
+      <div style="display: flex; gap: 10px;">
+        <button class="btn btn-outline" style="padding: 8px 14px; font-size: 0.8rem;" onclick="INV_App.limpiarFiltrosBandeja()">
+          <i class="fas fa-eraser"></i> Limpiar Filtros
+        </button>
+        <button class="btn btn-primary" style="padding: 8px 14px; font-size: 0.8rem;" onclick="INV_App.abrirModalAlta()">
+          <i class="fas fa-plus" style="margin-right:5px;"></i> Nuevo Artículo
+        </button>
+      </div>
     </div>
-    <button class="btn btn-outline" onclick="INV_App.limpiarFiltrosBandeja()" title="Limpiar filtros" style="padding:8px 12px;">
-      <i class="fas fa-eraser"></i>
-    </button>
-    <button class="btn btn-primary" onclick="INV_App.abrirModalAlta()">
-      <i class="fas fa-plus" style="margin-right:5px;"></i> Nuevo artículo
-    </button>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; align-items: end; margin-bottom: 20px;">
+      <div style="display: flex; flex-direction: column; gap: 6px;">
+        <span style="font-size: 0.7rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Categoría de Bien</span>
+        <select id="inv-filtro-categoria" class="form-input" style="padding: 10px 14px;" onchange="INV_App.cargarDatosBandeja()"></select>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 6px;">
+        <span style="font-size: 0.7rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Ubicación Física</span>
+        <select id="inv-filtro-edificio" class="form-input" style="padding: 10px 14px;" onchange="INV_App.cargarDatosBandeja()"></select>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 6px;">
+        <span style="font-size: 0.7rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Agente Asignado</span>
+        <select id="inv-filtro-agente" class="form-input" style="padding: 10px 14px;" onchange="INV_App.filtrarBandejaDebounced()"></select>
+      </div>
+    </div>
+    
+    <div style="display: flex; gap: 25px; border-top: 1px solid var(--border-soft); padding-top: 15px; flex-wrap: wrap;">
+       <div style="display: flex; align-items: center; gap: 10px;">
+         <div style="width: 38px; height: 38px; border-radius: 8px; background: var(--primary-light); color: var(--primary); display: flex; align-items: center; justify-content: center;"><i class="fas fa-boxes"></i></div>
+         <div><div style="font-size: 0.7rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Total Registrado</div><div id="inv-stat-total" style="font-weight: 800; font-size: 1.1rem; color: var(--text-main);">0</div></div>
+       </div>
+       <div style="display: flex; align-items: center; gap: 10px;">
+         <div style="width: 38px; height: 38px; border-radius: 8px; background: #EAF3DE; color: #3B6D11; display: flex; align-items: center; justify-content: center;"><i class="fas fa-check-circle"></i></div>
+         <div><div style="font-size: 0.7rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Disponibles</div><div id="inv-stat-disp" style="font-weight: 800; font-size: 1.1rem; color: var(--text-main);">0</div></div>
+       </div>
+       <div style="display: flex; align-items: center; gap: 10px;">
+         <div style="width: 38px; height: 38px; border-radius: 8px; background: #FAEEDA; color: #854F0B; display: flex; align-items: center; justify-content: center;"><i class="fas fa-user-tie"></i></div>
+         <div><div style="font-size: 0.7rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Asignados</div><div id="inv-stat-asig" style="font-weight: 800; font-size: 1.1rem; color: var(--text-main);">0</div></div>
+       </div>
+       <div style="display: flex; align-items: center; gap: 10px;">
+         <div style="width: 38px; height: 38px; border-radius: 8px; background: #FCEBEB; color: #A32D2D; display: flex; align-items: center; justify-content: center;"><i class="fas fa-tools"></i></div>
+         <div><div style="font-size: 0.7rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Mantenimiento</div><div id="inv-stat-mant" style="font-weight: 800; font-size: 1.1rem; color: var(--text-main);">0</div></div>
+       </div>
+    </div>
   </div>
 
   <div id="inv-dashboard-content">
-    <div style="text-align:center;padding:60px 20px;">
+    <div style="text-align:center; padding:60px 20px;">
       <i class="fas fa-circle-notch spinner fa-3x" style="color:var(--primary);"></i>
-      <p style="margin-top:15px;color:var(--text-muted);font-weight:600;">Sincronizando inventario...</p>
+      <p style="margin-top:15px; color:var(--text-muted); font-weight:600;">Sincronizando inventario...</p>
     </div>
   </div>
 </div>
 
-<!-- MODAL: Nuevo Artículo -->
 <div id="modal-inv-alta" class="modal-overlay hidden">
-  <div class="modal-box" style="max-width:580px;width:95%;max-height:92vh;overflow-y:auto;">
-    <div class="modal-header" style="border-bottom:1px solid var(--border-soft);">
-      <span style="font-weight:800;color:var(--primary);font-size:1rem;">
-        <i class="fas fa-plus-circle"></i> Nuevo artículo
-      </span>
-      <button class="btn-icono" style="border:none;" onclick="Portal_Core.cerrarModal('modal-inv-alta')">
-        <i class="fas fa-times"></i>
-      </button>
+  <div class="modal-box" style="max-width:580px; width:95%; max-height:92vh; overflow-y:auto;">
+    <div style="font-size: 1.2rem; font-weight: 800; color: var(--text-main); margin-bottom: 20px; border-bottom: 1px solid var(--border-soft); padding-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
+      <span><i class="fas fa-plus-circle" style="color:var(--primary); margin-right: 8px;"></i> Ingresar Nuevo Activo</span>
+      <button class="btn-icono" style="border:none; background: var(--bg-surface);" onclick="Portal_Core.cerrarModal('modal-inv-alta')"><i class="fas fa-times"></i></button>
     </div>
 
-    <div style="padding:4px 0 10px;">
-
-      <!-- SECCIÓN 1: IDENTIFICACIÓN (SUAF) -->
-      <div class="inv-fsec">
-        <i class="fas fa-qrcode" style="font-size:0.75rem;"></i> Identificación
-        <span class="inv-suaf-tag">SUAF</span>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-        <div class="form-group">
-          <label class="form-label">ID patrimonial</label>
-          <input type="text" id="alta-inv-idpat" class="form-input" placeholder="Ej: MIC.3">
-        </div>
-        <div class="form-group">
-          <label class="form-label">N° Serie / IMEI</label>
-          <input type="text" id="alta-inv-serie" class="form-input" placeholder="Opcional">
-        </div>
-        <div class="form-group" style="grid-column:span 2;">
-          <label class="form-label">Observaciones</label>
-          <textarea id="alta-inv-observaciones" class="form-input" style="min-height:52px;resize:vertical;" placeholder="Notas, aclaraciones, historial..."></textarea>
+    <div style="display: flex; flex-direction: column; gap: 15px;">
+      
+      <div style="background: var(--bg-app); padding: 15px; border-radius: 12px; border: 1px solid var(--border-soft);">
+        <span style="font-size: 0.75rem; font-weight: 800; color: var(--primary); text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: 10px;"><i class="fas fa-tag"></i> Categorización</span>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div style="grid-column: span 2;">
+            <label style="font-size: 0.7rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Categoría <span style="color:var(--danger)">*</span></label>
+            <select id="alta-inv-categoria" class="form-input" style="margin-top: 4px;" onchange="INV_App.toggleCamposAlta()"></select>
+          </div>
+          <div>
+            <label style="font-size: 0.7rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Marca</label>
+            <select id="alta-inv-marca" class="form-input" style="margin-top: 4px;"></select>
+          </div>
+          <div>
+            <label style="font-size: 0.7rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Modelo</label>
+            <input type="text" id="alta-inv-modelo" class="form-input" placeholder="Ej: EliteBook 840" style="margin-top: 4px;">
+          </div>
         </div>
       </div>
 
-      <!-- SECCIÓN 2: PROPIEDADES DEL ARTÍCULO -->
-      <div class="inv-fsec"><i class="fas fa-tag" style="font-size:0.75rem;"></i> Propiedades del artículo</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-        <div class="form-group" style="grid-column:span 2;">
-          <label class="form-label">Categoría <span style="color:var(--danger)">*</span></label>
-          <select id="alta-inv-categoria" class="form-input" onchange="INV_App.toggleCamposAlta()"></select>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Marca</label>
-          <select id="alta-inv-marca" class="form-input"></select>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Modelo</label>
-          <input type="text" id="alta-inv-modelo" class="form-input" placeholder="Ej: EliteBook 840">
-        </div>
-        <div class="form-group" style="grid-column:span 2;">
-          <label class="form-label">Características</label>
-          <textarea id="alta-inv-caracteristicas" class="form-input" style="min-height:52px;resize:vertical;" placeholder="Procesador, RAM, almacenamiento, etc."></textarea>
+      <div id="box-alta-equipos" style="background: var(--bg-app); padding: 15px; border-radius: 12px; border: 1px solid var(--border-soft);">
+        <span style="font-size: 0.75rem; font-weight: 800; color: var(--primary); text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: 10px;"><i class="fas fa-barcode"></i> Identificación Única (SUAF)</span>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div>
+            <label style="font-size: 0.7rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">ID Patrimonial</label>
+            <input type="text" id="alta-inv-idpat" class="form-input" placeholder="Ej: MIC.3" style="margin-top: 4px;">
+          </div>
+          <div>
+            <label style="font-size: 0.7rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">N° Serie / IMEI</label>
+            <input type="text" id="alta-inv-serie" class="form-input" placeholder="Opcional" style="margin-top: 4px;">
+          </div>
+          <div style="grid-column: span 2;">
+            <label style="font-size: 0.7rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Características Técnicas</label>
+            <input type="text" id="alta-inv-caracteristicas" class="form-input" placeholder="Procesador, RAM, Almacenamiento, etc." style="margin-top: 4px;">
+          </div>
         </div>
       </div>
 
-      <!-- SECCIÓN 3: ESTADO Y UBICACIÓN -->
-      <div class="inv-fsec"><i class="fas fa-map-marker-alt" style="font-size:0.75rem;"></i> Estado y ubicación</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-        <div class="form-group">
-          <label class="form-label">Estado inicial <span style="color:var(--danger)">*</span></label>
-          <select id="alta-inv-estado" class="form-input"></select>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Edificio / Ubicación <span style="color:var(--danger)">*</span></label>
-          <select id="alta-inv-edificio" class="form-input"></select>
+      <div id="box-alta-insumos" class="hidden" style="background: #e5f6f3; padding: 15px; border-radius: 12px; border: 1px solid #a7e0d3;">
+        <span style="font-size: 0.75rem; font-weight: 800; color: var(--success); text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: 10px;"><i class="fas fa-cubes"></i> Carga de Stock</span>
+        <div>
+          <label style="font-size: 0.7rem; font-weight: 700; color: var(--success); text-transform: uppercase;">Cantidad Ingresada (Unidades) <span style="color:var(--danger)">*</span></label>
+          <input type="number" id="alta-inv-stock" class="form-input" min="1" value="1" style="margin-top: 4px; border-color: #a7e0d3;">
         </div>
       </div>
 
-      <!-- SECCIÓN 4: INVENTARIO Y ADQUISICIÓN -->
-      <div class="inv-fsec"><i class="fas fa-calendar-alt" style="font-size:0.75rem;"></i> Inventario y adquisición</div>
-      <div id="box-alta-insumos" class="hidden" style="margin-bottom:12px;">
-        <div class="form-group">
-          <label class="form-label">Cantidad inicial (stock) <span style="color:var(--danger)">*</span></label>
-          <input type="number" id="alta-inv-stock" class="form-input" min="1" value="1">
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+        <div>
+          <label style="font-size: 0.7rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Estado Inicial <span style="color:var(--danger)">*</span></label>
+          <select id="alta-inv-estado" class="form-input" style="margin-top: 4px;"></select>
+        </div>
+        <div>
+          <label style="font-size: 0.7rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Depósito Asignado <span style="color:var(--danger)">*</span></label>
+          <select id="alta-inv-edificio" class="form-input" style="margin-top: 4px;"></select>
         </div>
       </div>
-      <!-- Placeholder para compatibilidad con toggleCamposAlta -->
-      <div id="box-alta-equipos"></div>
+      
+      <div>
+        <label style="font-size: 0.7rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Observaciones de Ingreso</label>
+        <textarea id="alta-inv-observaciones" class="form-input" rows="2" placeholder="Estado estético, aclaraciones, etc." style="margin-top: 4px;"></textarea>
+      </div>
+
     </div>
 
-    <div style="display:flex;gap:10px;justify-content:flex-end;padding-top:14px;border-top:1px solid var(--border-soft);">
+    <div style="text-align:right; margin-top:25px; border-top:1px solid var(--border-soft); padding-top:20px; display:flex; justify-content:flex-end; gap:10px;">
       <button class="btn btn-outline" onclick="Portal_Core.cerrarModal('modal-inv-alta')">Cancelar</button>
       <button class="btn btn-primary" id="btn-guardar-alta" onclick="INV_App.guardarNuevoActivo()">
-        <i class="fas fa-save" style="margin-right:5px;"></i> Registrar artículo
+        <i class="fas fa-save" style="margin-right:5px;"></i> Registrar Activo
       </button>
     </div>
   </div>
 </div>
 
-<!-- Modal: Ver QR (sin cambios) -->
 <div id="modal-ver-qr" class="modal-overlay hidden">
-  <div class="modal-box" style="text-align: center; max-width: 340px;">
-    <div class="modal-header">
-      <span style="font-weight: 800; color: var(--primary);">
-        <i class="fas fa-qrcode" style="margin-right: 6px;"></i> Identificador Único
-      </span>
-      <button class="btn-icono" style="border:none;" onclick="Portal_Core.cerrarModal('modal-ver-qr')">
-        <i class="fas fa-times"></i>
-      </button>
+  <div class="modal-box" style="text-align: center; max-width: 380px;">
+    <div style="font-size: 1.2rem; font-weight: 800; color: var(--text-main); margin-bottom: 20px; border-bottom: 1px solid var(--border-soft); padding-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
+      <span><i class="fas fa-qrcode" style="color:var(--primary); margin-right: 8px;"></i> Identificador QR</span>
+      <button class="btn-icono" style="border:none; background: var(--bg-surface);" onclick="Portal_Core.cerrarModal('modal-ver-qr')"><i class="fas fa-times"></i></button>
     </div>
-    <h4 id="qr-modal-title" style="margin: 15px 0 5px; color: var(--text-main); font-size: 1.1rem; font-weight: 800;"></h4>
-    <p style="font-size: 0.8rem; color: var(--text-muted); font-family: monospace; margin-bottom: 20px;
-              background: var(--bg-app); padding: 4px; border-radius: 6px; display: inline-block;">
-      ID: <span id="qr-modal-subtitle" style="font-weight: bold;"></span>
-    </p>
-    <div style="background: white; padding: 15px; border-radius: 16px; display: inline-block;
-                border: 2px dashed var(--primary); box-shadow: var(--shadow-sm);">
-      <img id="qr-modal-img" src="" alt="Código QR" style="width: 200px; height: 200px; display: block; margin: 0 auto;">
+    
+    <div style="background: var(--bg-app); padding: 15px; border-radius: 12px; margin-bottom: 20px; border: 1px solid var(--border-soft);">
+      <h4 id="qr-modal-title" style="margin: 0 0 5px; color: var(--text-main); font-size: 1.15rem; font-weight: 800;"></h4>
+      <div style="font-size: 0.85rem; color: var(--primary); font-family: monospace; font-weight: 800;">
+        ID: <span id="qr-modal-subtitle"></span>
+      </div>
     </div>
-    <div style="margin-top: 20px;">
-      <button class="btn btn-primary" style="width: 100%; border-radius: 25px;" onclick="Portal_Core.cerrarModal('modal-ver-qr')">
+    
+    <div style="background: white; padding: 20px; border-radius: 16px; display: inline-block; border: 2px dashed var(--primary); box-shadow: var(--shadow-sm);">
+      <img id="qr-modal-img" src="" alt="Código QR" style="width: 220px; height: 220px; display: block; margin: 0 auto;">
+    </div>
+    
+    <div style="margin-top: 25px;">
+      <button class="btn btn-outline" style="width: 100%; border-radius: 10px;" onclick="Portal_Core.cerrarModal('modal-ver-qr')">
         Cerrar
       </button>
     </div>

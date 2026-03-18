@@ -1,340 +1,418 @@
 <script>
-  /**
-   * ========================================================================
-   * Inventario_Bandeja_JS.html
-   * PROYECTO: Portal de Gestión - Defensoría del Pueblo
-   * ========================================================================
-   */
+  // ========================================================================
+  // Inventario_Bandeja_JS.html — v2.2 VERIFIED
+  // Reemplaza Inventario_JS.html (monolito viejo con google.script.run).
+  // Usa Portal_Core.ejecutarBackend (async/await) sin google.script.run.
+  // ========================================================================
 
-  Object.assign(window.INV_App, {
-
-    iniciarBandeja: async function() {
-      document.getElementById('ruta-actual').innerText = 'Inventario General';
-
-      ['inv-filtro-texto','inv-filtro-categoria','inv-filtro-edificio',
-       'inv-filtro-agente','manual-qr-input'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.value = '';
-      });
-
-      const modalQR   = document.getElementById('modal-ver-qr');
-      const modalAlta = document.getElementById('modal-inv-alta');
-      if (modalQR   && modalQR.parentElement   !== document.body) document.body.appendChild(modalQR);
-      if (modalAlta && modalAlta.parentElement !== document.body) document.body.appendChild(modalAlta);
-
-      if (typeof INV_App.detenerCamaraEnVivo === 'function') INV_App.detenerCamaraEnVivo();
-
-      const cache = Memoria.leer('diccionariosINV');
-      if (cache && cache.categorias) {
-        this.poblarSelectores(cache);
-        this.cargarDatosBandeja();
-      } else {
-        this._mostrarSpinnerBandeja('Descargando catálogos del sistema...');
-        try {
-          const res = await Portal_Core.ejecutarBackend('obtenerDiccionariosInventario');
-          if (res && res.success && res.data) {
-            Memoria.guardar('diccionariosINV', res.data);
-            this.poblarSelectores(res.data);
-            this.cargarDatosBandeja();
-          } else {
-            this._mostrarErrorBandeja(`Fallo de Base de Datos: ${res ? res.message : 'Respuesta vacía.'}`);
-          }
-        } catch (err) {
-          this._mostrarErrorBandeja(`Error de Servidor: ${err.message}`);
-        }
-      }
-    },
-
-    poblarSelectores: function(cache) {
-      try {
-        this._llenarSelect('inv-filtro-categoria', cache.categorias);
-        this._llenarSelect('inv-filtro-edificio',  cache.edificios);
-        this._llenarSelect('inv-filtro-agente',    cache.agentes, 'Todos los Agentes');
-        this._llenarSelect('alta-inv-categoria',   cache.categorias, 'Seleccione...');
-        this._llenarSelect('alta-inv-marca',       cache.marcas,     'S/M');
-        this._llenarSelect('alta-inv-estado',      cache.estados,    'Seleccione...');
-        this._llenarSelect('alta-inv-edificio',    cache.edificios,  'Seleccione...');
-      } catch(e) {
-        console.error('[INV Bandeja] Error poblando selects:', e);
-      }
-    },
-
-    cargarDatosBandeja: async function() {
-      const cat  = document.getElementById('inv-filtro-categoria').value;
-      const edif = document.getElementById('inv-filtro-edificio').value;
-
-      this._mostrarSpinnerBandeja('Consultando inventario...');
-
-      try {
-        const payload = {
-          categoria_id: cat  ? parseInt(cat)  : null,
-          edificio_id:  edif ? parseInt(edif) : null
-        };
-        const res = await Portal_Core.ejecutarBackend('obtenerInventarioBackend', payload);
-        
-        if (!res || !res.success) {
-          this._mostrarErrorBandeja(res ? res.message : 'Sin respuesta del servidor.');
-          return;
-        }
-        this.estadoBandeja.datosOriginales = res.data || [];
-        this.procesarFiltrosLocales();
-      } catch (err) {
-        this._mostrarErrorBandeja(err.message);
-      }
-    },
-
-    filtrarBandejaDebounced: function() {
-      clearTimeout(this.estadoBandeja.timeoutBusqueda);
-      this.estadoBandeja.timeoutBusqueda = setTimeout(() => this.procesarFiltrosLocales(), 300);
-    },
-
-    limpiarFiltrosBandeja: function() {
-      document.getElementById('inv-filtro-categoria').value = '';
-      document.getElementById('inv-filtro-edificio').value  = '';
-      document.getElementById('inv-filtro-agente').value    = '';
-      document.getElementById('inv-filtro-texto').value     = '';
-      this.cargarDatosBandeja();
-    },
-
-    procesarFiltrosLocales: function() {
-      const texto  = document.getElementById('inv-filtro-texto').value.toLowerCase().trim();
-      const agente = document.getElementById('inv-filtro-agente').value;
-
-      let datos = this.estadoBandeja.datosOriginales;
-      if (agente) datos = datos.filter(a => a.agente_asignado === agente);
-      if (texto)  datos = datos.filter(a =>
-        `${a.activo_id} ${a.categoria} ${a.marca} ${a.modelo} ${a.caracteristicas}
-         ${a.nro_serie_imei} ${a.id_patrimonial} ${a.agente_asignado}`.toLowerCase().includes(texto)
-      );
-
-      this._actualizarStats(datos);
-      this.renderizarGrilla(datos, texto);
-    },
-
-    _actualizarStats: function(datos) {
-      try {
-        const total = datos.length;
-        const byEstado = (kw) => datos.filter(a => (a.estado||'').toLowerCase().includes(kw)).length;
-        const s = (id, v) => { const el = document.getElementById(id); if(el) el.innerText = v; };
-        s('inv-stat-total', total);
-        s('inv-stat-disp',  byEstado('disp'));
-        s('inv-stat-asig',  byEstado('asig'));
-        s('inv-stat-mant',  byEstado('man'));
-      } catch(e) {}
-    },
-
-    renderizarGrilla: function(lista, terminoResalte = '') {
-      const box = document.getElementById('inv-dashboard-content');
-      if (!box) return;
-
-      if (!lista || lista.length === 0) {
-        box.innerHTML = `
-          <div style="text-align:center; padding:60px; color:var(--text-muted);
-                      background:var(--bg-surface); border-radius:16px;
-                      border:1px dashed var(--border-hard);">
-            <i class="fas fa-boxes fa-3x" style="opacity:0.2; margin-bottom:15px;"></i>
-            <p style="font-weight:600;">No hay artículos con esos filtros.</p>
-          </div>`;
-        return;
-      }
-
-      const resaltar = (texto) => {
-        if (!terminoResalte || !texto) return texto || '';
-        return String(texto).replace(
-          new RegExp(`(${terminoResalte})`, 'gi'),
-          `<mark style="background-color:var(--warning-bg); color:var(--warning);
-                        padding:0 2px; border-radius:4px;">$1</mark>`
-        );
-      };
-
-      box.innerHTML =
-        `<div style="font-size:0.8rem; color:var(--text-muted); margin-bottom:12px;
-                     text-align:right; font-weight:700; text-transform:uppercase;">
-           Resultados: ${lista.length}
-         </div>` +
-        lista.map(a => {
-          let iconoCat = 'fa-desktop';
-          if (a.categoria.toLowerCase().includes('insumo'))  iconoCat = 'fa-tint';
-          if (a.categoria.toLowerCase().includes('telefon')) iconoCat = 'fa-mobile-alt';
-          if (a.categoria.toLowerCase().includes('electro')) iconoCat = 'fa-blender';
-
-          const snText = a.nro_serie_imei
-            ? `S/N: ${a.nro_serie_imei.substring(0, 10)}${a.nro_serie_imei.length > 10 ? '…' : ''}`
-            : '';
-
-          let detalleFila3 = '';
-          if (a.es_consumible) {
-            detalleFila3 = `
-              <span class="tm-badge-route" style="border-color:var(--success);
-                    color:var(--success); background:var(--success-bg);">
-                <i class="fas fa-cubes"></i> Stock: ${a.stock_actual}
-              </span>`;
-          } else {
-            detalleFila3 = `
-              <span class="tm-badge-route">
-                <i class="fas fa-map-marker-alt" style="color:var(--primary);"></i>
-                ${a.edificio || 'S/D'}
-              </span>
-              <span class="tm-badge-route">
-                <i class="fas fa-user-tie" style="color:var(--text-main);"></i>
-                ${resaltar(a.agente_asignado)}
-              </span>`;
-          }
-
-          return `
-            <div class="card-inv-item" onclick="cargarModulo('InventarioFicha', '${a.activo_id}')">
-              <div style="display:flex; align-items:center; gap:14px; margin-bottom:10px;">
-                <div style="width:40px; height:40px; border-radius:10px; background:var(--primary-light);
-                            display:flex; align-items:center; justify-content:center; flex-shrink:0;">
-                  <i class="fas ${iconoCat}" style="color:var(--primary);"></i>
-                </div>
-                <div style="flex:1; min-width:0;">
-                  <div style="font-weight:700; color:var(--text-main); font-size:0.95rem;
-                              white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
-                    ${resaltar(a.marca || '')} ${resaltar(a.modelo || '')}
-                  </div>
-                  <div style="font-size:0.8rem; color:var(--text-muted);">
-                    ${resaltar(a.categoria)}
-                    ${snText ? `&bull; <span style="font-family:monospace;">${resaltar(snText)}</span>` : ''}
-                  </div>
-                </div>
-                <span style="font-size:0.75rem; font-weight:700; padding:3px 10px;
-                             border-radius:20px; background:var(--primary-light);
-                             color:var(--primary); white-space:nowrap;">
-                  ${resaltar(a.activo_id)}
-                </span>
-              </div>
-              <div style="display:flex; gap:8px; flex-wrap:wrap; border-top:1px dashed var(--border-soft);
-                          padding-top:12px;">
-                ${detalleFila3}
-              </div>
-            </div>`;
-        }).join('');
-    },
-
-    abrirModalAlta: function() {
-      ['alta-inv-categoria','alta-inv-marca','alta-inv-modelo',
-       'alta-inv-serie','alta-inv-idpat','alta-inv-observaciones','alta-inv-caracteristicas'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.value = '';
-      });
-      const stockEl  = document.getElementById('alta-inv-stock');
-      const estadoEl = document.getElementById('alta-inv-estado');
-      if (stockEl)  stockEl.value  = 1;
-      if (estadoEl) estadoEl.value = '';
-
-      this._toggleCamposAlta();
-      Portal_Core.abrirModal('modal-inv-alta');
-    },
-
-    _toggleCamposAlta: function() {
-      const selectCat = document.getElementById('alta-inv-categoria');
-      const esInsumo  = selectCat.options[selectCat.selectedIndex]?.text.toLowerCase().includes('insumo');
-      const boxEquipos = document.getElementById('box-alta-equipos');
-      const boxInsumos = document.getElementById('box-alta-insumos');
-      if (boxEquipos) boxEquipos.classList.toggle('hidden',  esInsumo);
-      if (boxInsumos) boxInsumos.classList.toggle('hidden', !esInsumo);
-    },
-
-    toggleCamposAlta: function() { this._toggleCamposAlta(); },
-
-    guardarNuevoActivo: async function() {
-      const selectCat = document.getElementById('alta-inv-categoria');
-      if (!selectCat.value) return Portal_Core.mostrarToast('warning', 'Faltan Datos', 'La categoría es obligatoria.');
-      if (!document.getElementById('alta-inv-estado').value)   return Portal_Core.mostrarToast('warning', 'Faltan Datos', 'El estado es obligatorio.');
-      if (!document.getElementById('alta-inv-edificio').value) return Portal_Core.mostrarToast('warning', 'Faltan Datos', 'Debe asignarle un edificio de depósito inicial.');
-
-      const esInsumo = selectCat.options[selectCat.selectedIndex]?.text.toLowerCase().includes('insumo');
-
-      const payload = {
-        categoria_id:  parseInt(selectCat.value),
-        marca_id:      document.getElementById('alta-inv-marca').value
-                         ? parseInt(document.getElementById('alta-inv-marca').value) : null,
-        modelo:        document.getElementById('alta-inv-modelo').value.trim(),
-        estado_id:     parseInt(document.getElementById('alta-inv-estado').value),
-        edificio_id:   parseInt(document.getElementById('alta-inv-edificio').value),
-        es_consumible: esInsumo,
-        stock_actual:  esInsumo ? parseInt(document.getElementById('alta-inv-stock').value) : 1
-      };
-
-      // Campos SUAF + propiedades
-      const idpat    = document.getElementById('alta-inv-idpat')?.value.trim();
-      const obs      = document.getElementById('alta-inv-observaciones')?.value.trim();
-      const caract   = document.getElementById('alta-inv-caracteristicas')?.value.trim();
-      if (idpat)  payload.id_patrimonial  = idpat;
-      if (obs)    payload.observaciones   = obs;
-      if (caract) payload.caracteristicas = caract;
-
-      if (!esInsumo) {
-        const serie = document.getElementById('alta-inv-serie')?.value.trim();
-        if (serie) payload.nro_serie_imei = serie;
-      }
-
-      const btn = document.getElementById('btn-guardar-alta');
-      btn.disabled = true;
-      btn.innerHTML = '<i class="fas fa-spinner spinner"></i>';
-
-      try {
-        const res = await Portal_Core.ejecutarBackend('crearActivoBackend', payload, window.USUARIO_ACTUAL.idAgente);
-        btn.disabled = false;
-        btn.innerHTML = '<i class="fas fa-save" style="margin-right:5px;"></i> Registrar artículo';
-        
-        if (res.success) {
-          Portal_Core.cerrarModal('modal-inv-alta');
-          Portal_Core.mostrarToast('success', 'Éxito', 'Artículo registrado correctamente.');
-          this.cargarDatosBandeja();
-          this.mostrarQRCard(res.id_qr, payload.modelo || 'Artículo Nuevo');
-        } else {
-          Portal_Core.mostrarToast('error', 'Error BD', res.message);
-        }
-      } catch (err) {
-        btn.disabled = false;
-        btn.innerHTML = '<i class="fas fa-save" style="margin-right:5px;"></i> Registrar artículo';
-        Portal_Core.mostrarToast('error', 'Error de Red', err.message);
-      }
-    },
-
-    mostrarQRCard: function(idActivo, marcaModelo) {
-      document.getElementById('qr-modal-title').innerText    = marcaModelo || 'Artículo Genérico';
-      document.getElementById('qr-modal-subtitle').innerText = idActivo;
-      document.getElementById('qr-modal-img').src =
-        `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(idActivo)}&margin=0`;
-      Portal_Core.abrirModal('modal-ver-qr');
-    },
-
-    _llenarSelect: function(id, arreglo, placeholder = 'Todas las opciones') {
-      const el = document.getElementById(id);
-      if (!el) return;
-      if (!arreglo || !Array.isArray(arreglo)) {
-        el.innerHTML = `<option value="">Error de carga</option>`;
-        return;
-      }
-      el.innerHTML = `<option value="">${placeholder}</option>` +
-        arreglo.map(item => {
-          const texto = item.nombre || (item.apellido ? `${item.apellido}, ${item.nombre}` : item.id);
-          return `<option value="${item.id || texto}">${texto}</option>`;
-        }).join('');
-    },
-
-    _mostrarSpinnerBandeja: function(mensaje = 'Cargando...') {
-      const box = document.getElementById('inv-dashboard-content');
-      if (box) box.innerHTML = `
-        <div style="text-align:center; padding:60px 20px;">
-          <i class="fas fa-circle-notch spinner fa-3x" style="color:var(--primary);"></i>
-          <p style="margin-top:15px; color:var(--text-muted); font-weight:600;">${mensaje}</p>
-        </div>`;
-    },
-
-    _mostrarErrorBandeja: function(msg) {
-      const box = document.getElementById('inv-dashboard-content');
-      if (box) box.innerHTML = `
-        <div style="background:white; border:1px solid var(--danger-bg); border-radius:12px;
-                    padding:30px 20px; text-align:center; margin:20px; box-shadow:var(--shadow-sm);">
-          <i class="fas fa-exclamation-triangle fa-3x" style="color:var(--danger); margin-bottom:15px;"></i>
-          <h3 style="color:var(--text-main); margin-bottom:10px;">Aviso del Sistema</h3>
-          <p style="color:var(--text-muted); font-size:0.9rem;">${msg}</p>
-        </div>`;
+  (function () {
+    // Guard: garantizar que el namespace exista antes de asignar funciones
+    if (!window.INV_App || typeof window.INV_App !== 'object') {
+      window.INV_App = {};
     }
 
-  });
+    // Verificación de arranque — aparece en consola para confirmar que este
+    // archivo cargó correctamente (útil para debugging)
+    console.log('[INV Bandeja v2.2] Script cargado. INV_App disponible:', typeof window.INV_App);
+
+    Object.assign(window.INV_App, {
+
+      // ===================================================================
+      // INICIO DE LA VISTA BANDEJA
+      // ===================================================================
+      iniciarBandeja: async function () {
+        console.log('[INV Bandeja] iniciarBandeja() llamada correctamente.');
+
+        const rutaEl = document.getElementById('ruta-actual');
+        if (rutaEl) rutaEl.innerText = 'Inventario General';
+
+        // Limpiar filtros
+        ['inv-filtro-texto', 'inv-filtro-categoria', 'inv-filtro-edificio',
+          'inv-filtro-agente', 'manual-qr-input'].forEach(function (id) {
+          var el = document.getElementById(id);
+          if (el) el.value = '';
+        });
+
+        // Mover modales al body si no están ahí
+        var modalQR   = document.getElementById('modal-ver-qr');
+        var modalAlta = document.getElementById('modal-inv-alta');
+        if (modalQR   && modalQR.parentElement   !== document.body) document.body.appendChild(modalQR);
+        if (modalAlta && modalAlta.parentElement !== document.body) document.body.appendChild(modalAlta);
+
+        // Detener cámara si estaba activa
+        if (typeof INV_App.detenerCamaraEnVivo === 'function') {
+          INV_App.detenerCamaraEnVivo();
+        }
+
+        // Intentar desde caché primero
+        var cache = Memoria.leer('diccionariosINV');
+        if (cache && cache.categorias) {
+          this.poblarSelectores(cache);
+          this.cargarDatosBandeja();
+        } else {
+          this._mostrarSpinnerBandeja('Descargando catálogos del sistema...');
+          try {
+            var res = await Portal_Core.ejecutarBackend('obtenerDiccionariosInventario');
+            if (res && res.success && res.data) {
+              Memoria.guardar('diccionariosINV', res.data);
+              this.poblarSelectores(res.data);
+              this.cargarDatosBandeja();
+            } else {
+              this._mostrarErrorBandeja('Fallo de Base de Datos: ' + (res ? res.message : 'Respuesta vacía.'));
+            }
+          } catch (err) {
+            this._mostrarErrorBandeja('Error de Servidor: ' + err.message);
+          }
+        }
+      },
+
+      // ===================================================================
+      // POBLAR SELECTS
+      // ===================================================================
+      poblarSelectores: function (cache) {
+        try {
+          this._llenarSelect('inv-filtro-categoria', cache.categorias);
+          this._llenarSelect('inv-filtro-edificio',  cache.edificios);
+          this._llenarSelect('inv-filtro-agente',    cache.agentes,     'Todos los Agentes');
+          this._llenarSelect('alta-inv-categoria',   cache.categorias,  'Seleccione...');
+          this._llenarSelect('alta-inv-marca',       cache.marcas,      'S/M');
+          this._llenarSelect('alta-inv-estado',      cache.estados,     'Seleccione...');
+          this._llenarSelect('alta-inv-edificio',    cache.edificios,   'Seleccione...');
+        } catch (e) {
+          console.error('[INV Bandeja] Error poblando selects:', e);
+        }
+      },
+
+      // ===================================================================
+      // CARGA DESDE BACKEND
+      // ===================================================================
+      cargarDatosBandeja: async function () {
+        var catEl  = document.getElementById('inv-filtro-categoria');
+        var edifEl = document.getElementById('inv-filtro-edificio');
+        var cat    = catEl  ? catEl.value  : '';
+        var edif   = edifEl ? edifEl.value : '';
+
+        this._mostrarSpinnerBandeja('Consultando inventario...');
+
+        try {
+          var payload = {
+            categoria_id: cat  ? parseInt(cat)  : null,
+            edificio_id:  edif ? parseInt(edif) : null
+          };
+          var res = await Portal_Core.ejecutarBackend('obtenerInventarioBackend', payload);
+
+          if (!res || !res.success) {
+            this._mostrarErrorBandeja(res ? res.message : 'Sin respuesta del servidor.');
+            return;
+          }
+          this.estadoBandeja.datosOriginales = res.data || [];
+          this.procesarFiltrosLocales();
+        } catch (err) {
+          this._mostrarErrorBandeja(err.message);
+        }
+      },
+
+      // ===================================================================
+      // FILTROS LOCALES
+      // ===================================================================
+      filtrarBandejaDebounced: function () {
+        clearTimeout(this.estadoBandeja.timeoutBusqueda);
+        var self = this;
+        this.estadoBandeja.timeoutBusqueda = setTimeout(function () {
+          self.procesarFiltrosLocales();
+        }, 300);
+      },
+
+      limpiarFiltrosBandeja: function () {
+        ['inv-filtro-categoria', 'inv-filtro-edificio',
+          'inv-filtro-agente', 'inv-filtro-texto'].forEach(function (id) {
+          var el = document.getElementById(id);
+          if (el) el.value = '';
+        });
+        this.cargarDatosBandeja();
+      },
+
+      procesarFiltrosLocales: function () {
+        var textoEl  = document.getElementById('inv-filtro-texto');
+        var agenteEl = document.getElementById('inv-filtro-agente');
+        var texto    = textoEl  ? textoEl.value.toLowerCase().trim()  : '';
+        var agente   = agenteEl ? agenteEl.value : '';
+
+        var datos = this.estadoBandeja.datosOriginales || [];
+        if (agente) datos = datos.filter(function (a) { return a.agente_asignado === agente; });
+        if (texto)  datos = datos.filter(function (a) {
+          return ('' + a.activo_id + ' ' + a.categoria + ' ' + a.marca + ' ' + a.modelo + ' ' +
+                  a.caracteristicas + ' ' + a.nro_serie_imei + ' ' + a.id_patrimonial + ' ' +
+                  a.agente_asignado).toLowerCase().indexOf(texto) !== -1;
+        });
+
+        this._actualizarStats(datos);
+        this.renderizarGrilla(datos, texto);
+      },
+
+      // ===================================================================
+      // STATS HEADER
+      // ===================================================================
+      _actualizarStats: function (datos) {
+        try {
+          var total    = datos.length;
+          var byEstado = function (kw) {
+            return datos.filter(function (a) {
+              return (a.estado || '').toLowerCase().indexOf(kw) !== -1;
+            }).length;
+          };
+          var s = function (id, v) {
+            var el = document.getElementById(id);
+            if (el) el.innerText = v;
+          };
+          s('inv-stat-total', total);
+          s('inv-stat-disp',  byEstado('disp'));
+          s('inv-stat-asig',  byEstado('asig'));
+          s('inv-stat-mant',  byEstado('man'));
+        } catch (e) { /* silencioso */ }
+      },
+
+      // ===================================================================
+      // RENDER DE LA GRILLA
+      // ===================================================================
+      renderizarGrilla: function (lista, terminoResalte) {
+        terminoResalte = terminoResalte || '';
+        var box = document.getElementById('inv-dashboard-content');
+        if (!box) return;
+
+        if (!lista || lista.length === 0) {
+          box.innerHTML =
+            '<div style="text-align:center;padding:60px;color:var(--text-muted);' +
+            'background:var(--bg-surface);border-radius:16px;border:1px dashed var(--border-hard);">' +
+            '<i class="fas fa-boxes fa-3x" style="opacity:0.2;margin-bottom:15px;"></i>' +
+            '<p style="font-weight:600;">El padrón de activos está vacío o no hay coincidencias.</p>' +
+            '</div>';
+          return;
+        }
+
+        var escapedTermino = terminoResalte.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+        function resaltar(texto) {
+          if (!terminoResalte || !texto) return texto || '';
+          return String(texto).replace(
+            new RegExp('(' + escapedTermino + ')', 'gi'),
+            '<mark style="background-color:var(--warning-bg);color:var(--warning);' +
+            'padding:0 2px;border-radius:4px;">$1</mark>'
+          );
+        }
+
+        var html = '<div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:12px;' +
+                   'text-align:right;font-weight:700;text-transform:uppercase;">' +
+                   'Resultados: ' + lista.length + '</div>';
+
+        html += lista.map(function (a) {
+          var iconoCat = 'fa-desktop';
+          var cat = (a.categoria || '').toLowerCase();
+          if (cat.indexOf('insumo')   !== -1) iconoCat = 'fa-tint';
+          else if (cat.indexOf('telefon')  !== -1) iconoCat = 'fa-mobile-alt';
+          else if (cat.indexOf('electro')  !== -1) iconoCat = 'fa-blender';
+
+          var snText = a.nro_serie_imei
+            ? 'S/N: ' + a.nro_serie_imei.substring(0, 10) + (a.nro_serie_imei.length > 10 ? '…' : '')
+            : '';
+
+          var nombreDesc = ((a.marca || '') + ' ' + (a.modelo || '')).trim() || a.categoria;
+          var nombreEscaped = nombreDesc.replace(/'/g, "\\'");
+
+          var detalleFila3 = '';
+          if (a.es_consumible) {
+            detalleFila3 =
+              '<span class="tm-badge-route" style="border-color:var(--success);' +
+              'color:var(--success);background:var(--success-bg);">' +
+              '<i class="fas fa-cubes"></i> Stock: ' + a.stock_actual + '</span>';
+          } else {
+            detalleFila3 =
+              '<span class="tm-badge-route"><i class="fas fa-map-marker-alt" ' +
+              'style="color:var(--primary);"></i> ' + (a.edificio || 'S/D') + '</span>' +
+              '<span class="tm-badge-route"><i class="fas fa-user-tie" ' +
+              'style="color:var(--text-main);"></i> ' + resaltar(a.agente_asignado) + '</span>';
+          }
+
+          return '<div class="card-inv-item" onclick="cargarModulo(\'InventarioFicha\',\'' + a.activo_id + '\')">' +
+            '<div style="display:flex;align-items:center;gap:14px;margin-bottom:10px;">' +
+              '<div style="width:40px;height:40px;border-radius:10px;background:var(--primary-light);' +
+              'display:flex;align-items:center;justify-content:center;flex-shrink:0;">' +
+                '<i class="fas ' + iconoCat + '" style="color:var(--primary);"></i>' +
+              '</div>' +
+              '<div style="flex:1;min-width:0;">' +
+                '<div style="font-weight:700;color:var(--text-main);font-size:0.95rem;' +
+                'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' +
+                  resaltar(nombreDesc) +
+                '</div>' +
+                '<div style="font-size:0.8rem;color:var(--text-muted);">' +
+                  resaltar(a.categoria) +
+                  (snText ? ' &bull; <span style="font-family:monospace;">' + resaltar(snText) + '</span>' : '') +
+                '</div>' +
+              '</div>' +
+              '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0;">' +
+                '<span style="font-size:0.7rem;font-weight:800;padding:3px 10px;border-radius:20px;' +
+                'background:' + (a.estado_color || 'var(--primary)') + '20;' +
+                'color:' + (a.estado_color || 'var(--primary)') + ';text-transform:uppercase;">' +
+                  a.estado +
+                '</span>' +
+                '<button class="btn-icono" style="width:28px;height:28px;font-size:0.8rem;' +
+                'background:var(--primary-light);border-color:transparent;" ' +
+                'onclick="event.stopPropagation();INV_App.mostrarQRCard(\'' + a.activo_id + '\',\'' + nombreEscaped + '\');" ' +
+                'title="Ver QR">' +
+                  '<i class="fas fa-qrcode" style="color:var(--primary);"></i>' +
+                '</button>' +
+              '</div>' +
+            '</div>' +
+            '<div style="display:flex;gap:8px;flex-wrap:wrap;border-top:1px dashed var(--border-soft);padding-top:12px;">' +
+              detalleFila3 +
+              '<span class="tm-badge-route" style="margin-left:auto;font-family:monospace;' +
+              'color:var(--primary);font-size:0.72rem;">' + resaltar(a.activo_id) + '</span>' +
+            '</div>' +
+          '</div>';
+        }).join('');
+
+        box.innerHTML = html;
+      },
+
+      // ===================================================================
+      // MODAL ALTA
+      // ===================================================================
+      abrirModalAlta: function () {
+        ['alta-inv-categoria', 'alta-inv-marca', 'alta-inv-modelo',
+          'alta-inv-serie', 'alta-inv-idpat', 'alta-inv-observaciones',
+          'alta-inv-caracteristicas'].forEach(function (id) {
+          var el = document.getElementById(id);
+          if (el) el.value = '';
+        });
+        var stockEl  = document.getElementById('alta-inv-stock');
+        var estadoEl = document.getElementById('alta-inv-estado');
+        if (stockEl)  stockEl.value  = 1;
+        if (estadoEl) estadoEl.value = '';
+        this._toggleCamposAlta();
+        Portal_Core.abrirModal('modal-inv-alta');
+      },
+
+      _toggleCamposAlta: function () {
+        var selectCat  = document.getElementById('alta-inv-categoria');
+        if (!selectCat) return;
+        var esInsumo   = (selectCat.options[selectCat.selectedIndex] || {}).text
+                           ? selectCat.options[selectCat.selectedIndex].text.toLowerCase().indexOf('insumo') !== -1
+                           : false;
+        var boxEquipos = document.getElementById('box-alta-equipos');
+        var boxInsumos = document.getElementById('box-alta-insumos');
+        if (boxEquipos) boxEquipos.classList.toggle('hidden',  esInsumo);
+        if (boxInsumos) boxInsumos.classList.toggle('hidden', !esInsumo);
+      },
+
+      toggleCamposAlta: function () { this._toggleCamposAlta(); },
+
+      guardarNuevoActivo: async function () {
+        var selectCat = document.getElementById('alta-inv-categoria');
+        if (!selectCat || !selectCat.value)
+          return Portal_Core.mostrarToast('warning', 'Faltan Datos', 'La categoría es obligatoria.');
+        if (!document.getElementById('alta-inv-estado').value)
+          return Portal_Core.mostrarToast('warning', 'Faltan Datos', 'El estado es obligatorio.');
+        if (!document.getElementById('alta-inv-edificio').value)
+          return Portal_Core.mostrarToast('warning', 'Faltan Datos', 'Debe asignarle un edificio de depósito inicial.');
+
+        var esInsumo = selectCat.options[selectCat.selectedIndex]
+          ? selectCat.options[selectCat.selectedIndex].text.toLowerCase().indexOf('insumo') !== -1
+          : false;
+
+        var g = function (id) { var el = document.getElementById(id); return el ? el.value.trim() : ''; };
+
+        var payload = {
+          categoria_id:    parseInt(selectCat.value),
+          marca_id:        g('alta-inv-marca')    ? parseInt(g('alta-inv-marca'))   : null,
+          modelo:          g('alta-inv-modelo')   || null,
+          nro_serie_imei:  g('alta-inv-serie')    || null,
+          id_patrimonial:  g('alta-inv-idpat')    || null,
+          caracteristicas: g('alta-inv-caracteristicas') || null,
+          observaciones:   g('alta-inv-observaciones')   || null,
+          estado_id:       parseInt(g('alta-inv-estado')),
+          edificio_id:     parseInt(g('alta-inv-edificio')),
+          es_consumible:   esInsumo,
+          stock_actual:    esInsumo ? (parseInt(g('alta-inv-stock')) || 1) : null
+        };
+
+        var btn = document.getElementById('btn-guardar-alta');
+        if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Guardando...'; }
+
+        try {
+          var res = await Portal_Core.ejecutarBackend('crearActivoBackend', payload, window.USUARIO_ACTUAL.idAgente);
+          if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-save" style="margin-right:5px;"></i> Registrar artículo'; }
+          if (res && res.success) {
+            Portal_Core.cerrarModal('modal-inv-alta');
+            Memoria.borrar('diccionariosINV');
+            this.cargarDatosBandeja();
+            this.mostrarQRCard(res.id_qr, payload.modelo || 'Artículo Nuevo');
+          } else {
+            Portal_Core.mostrarToast('error', 'Error BD', res ? res.message : 'Sin respuesta.');
+          }
+        } catch (err) {
+          if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-save" style="margin-right:5px;"></i> Registrar artículo'; }
+          Portal_Core.mostrarToast('error', 'Error de Red', err.message);
+        }
+      },
+
+      // ===================================================================
+      // QR MODAL
+      // ===================================================================
+      mostrarQRCard: function (idActivo, marcaModelo) {
+        var titleEl    = document.getElementById('qr-modal-title');
+        var subtitleEl = document.getElementById('qr-modal-subtitle');
+        var imgEl      = document.getElementById('qr-modal-img');
+        if (titleEl)    titleEl.innerText    = marcaModelo || 'Artículo Genérico';
+        if (subtitleEl) subtitleEl.innerText = idActivo;
+        if (imgEl)      imgEl.src =
+          'https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=' +
+          encodeURIComponent(idActivo) + '&margin=0';
+        Portal_Core.abrirModal('modal-ver-qr');
+      },
+
+      // ===================================================================
+      // HELPERS INTERNOS
+      // ===================================================================
+      _llenarSelect: function (id, arreglo, placeholder) {
+        placeholder = placeholder || 'Todas las opciones';
+        var el = document.getElementById(id);
+        if (!el) return;
+        if (!arreglo || !Array.isArray(arreglo)) {
+          el.innerHTML = '<option value="">Error de carga</option>';
+          return;
+        }
+        el.innerHTML = '<option value="">' + placeholder + '</option>' +
+          arreglo.map(function (item) {
+            var texto = item.nombre || (item.apellido ? (item.apellido + ', ' + item.nombre) : item.id);
+            return '<option value="' + (item.id || texto) + '">' + texto + '</option>';
+          }).join('');
+      },
+
+      _mostrarSpinnerBandeja: function (mensaje) {
+        mensaje = mensaje || 'Cargando...';
+        var box = document.getElementById('inv-dashboard-content');
+        if (box) box.innerHTML =
+          '<div style="text-align:center;padding:60px 20px;">' +
+          '<i class="fas fa-circle-notch spinner fa-3x" style="color:var(--primary);"></i>' +
+          '<p style="margin-top:15px;color:var(--text-muted);font-weight:600;">' + mensaje + '</p>' +
+          '</div>';
+      },
+
+      _mostrarErrorBandeja: function (msg) {
+        var box = document.getElementById('inv-dashboard-content'); 
+        if (box) box.innerHTML =
+          '<div style="background:white;border:1px solid var(--danger-bg);border-radius:12px;' +
+          'padding:30px 20px;text-align:center;margin:20px;box-shadow:var(--shadow-sm);">' +
+          '<i class="fas fa-exclamation-triangle fa-3x" style="color:var(--danger);margin-bottom:15px;"></i>' +
+          '<h3 style="color:var(--text-main);margin-bottom:10px;">Aviso del Sistema</h3>' +
+          '<p style="color:var(--text-muted);font-size:0.9rem;">' + msg + '</p>' +
+          '</div>';
+      }
+
+    }); // fin Object.assign
+
+    // Verificación de cierre — confirma que iniciarBandeja quedó registrada
+    console.log('[INV Bandeja v2.2] iniciarBandeja registrada:', typeof window.INV_App.iniciarBandeja);
+
+  })(); // fin IIFE
 </script>

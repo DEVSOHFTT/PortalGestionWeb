@@ -4,8 +4,9 @@
    * Router_JS.html — V2.1
    * ========================================================================
    * Cambios:
-   *   • Inventario ahora usa sidebar ADMIN (no INV propio)
-   *   • AdminAgentes y AdminUsuarios registrados
+   * • Inventario ahora usa sidebar ADMIN (no INV propio)
+   * • AdminAgentes y AdminUsuarios registrados
+   * • FIX: InventarioScan ahora apunta a INV_App.iniciarScan()
    * ========================================================================
    */
 
@@ -25,7 +26,7 @@
 
     // -- Inventario (ahora bajo sidebar ADMIN) --
     InventarioBandeja:   { sidebar: 'ADMIN', topbar: true, init: (p) => INV_App.iniciarBandeja() },
-    InventarioScan:      { sidebar: 'ADMIN', topbar: true, init: (p) => INV_App.iniciarBandeja() },
+    InventarioScan:      { sidebar: 'ADMIN', topbar: true, init: (p) => INV_App.iniciarScan() }, // FIX APLICADO
     InventarioFicha:     { sidebar: 'ADMIN', topbar: true, init: (p) => INV_App.iniciarFicha(p) },
 
     // -- Hub --

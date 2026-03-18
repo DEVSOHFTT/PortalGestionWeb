@@ -279,12 +279,37 @@
   <?!= include('src/modules/ciudadanos/CIU_Recepcion_JS'); ?>
   <?!= include('src/modules/ciudadanos/CIU_Ficha_JS'); ?>
 
-  <!-- =====================================================
+ <!-- =====================================================
        SCRIPTS — MÓDULO: Inventario
+       Orden: Bandeja → Ficha → Scan
+       ❌ NO incluir Inventario_JS.html (archivo viejo/monolítico).
+          Si aparece esa línea en el archivo, eliminarla.
        ===================================================== -->
   <?!= include('src/modules/inventario/Inventario_Bandeja_JS'); ?>
   <?!= include('src/modules/inventario/Inventario_Ficha_JS'); ?>
   <?!= include('src/modules/inventario/Inventario_Scan_JS'); ?>
+ 
+<!-- =======================================================================
+     CONTEXTO — por qué se eliminó Inventario_JS.html
+     =======================================================================
+     El archivo Inventario_JS.html era el módulo monolítico original.
+     Definía window.INV_App.iniciarBandeja como función SINCRÓNICA y usaba
+     google.script.run (API de GAS clásica).
+ 
+     Los tres archivos actuales reemplazan ese monolito:
+       • Inventario_Bandeja_JS.html → iniciarBandeja ASYNC + Portal_Core.ejecutarBackend
+       • Inventario_Ficha_JS.html   → iniciarFicha ASYNC + Portal_Core.ejecutarBackend
+       • Inventario_Scan_JS.html    → lector QR popup + postMessage
+ 
+     Si Inventario_JS.html se incluía DESPUÉS de los nuevos, su
+     Object.assign pisaba iniciarBandeja con la versión vieja (sincrónica
+     con google.script.run), causando que:
+       a) El Router llamara a la versión vieja que internamente llamaba
+          google.script.run.obtenerDiccionariosInventario() — función que
+          ya no existe o no responde igual — y el spinner nunca se quitaba.
+       b) En algunas condiciones de carga el namespace no estaba listo y
+          el Router lanzaba "INV_App.iniciarBandeja is not a function".
+     ======================================================================= -->
 
   <!-- =====================================================
        SCRIPTS — MÓDULO: Administración
