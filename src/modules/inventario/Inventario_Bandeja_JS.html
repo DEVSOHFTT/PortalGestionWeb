@@ -8,7 +8,7 @@
 
   Object.assign(window.INV_App, {
 
-    iniciarBandeja: function() {
+    iniciarBandeja: async function() {
       document.getElementById('ruta-actual').innerText = 'Inventario General';
 
       ['inv-filtro-texto','inv-filtro-categoria','inv-filtro-edificio',
@@ -30,18 +30,18 @@
         this.cargarDatosBandeja();
       } else {
         this._mostrarSpinnerBandeja('Descargando catálogos del sistema...');
-        google.script.run
-          .withSuccessHandler(res => {
-            if (res && res.success && res.data) {
-              Memoria.guardar('diccionariosINV', res.data);
-              this.poblarSelectores(res.data);
-              this.cargarDatosBandeja();
-            } else {
-              this._mostrarErrorBandeja(`Fallo de Base de Datos: ${res ? res.message : 'Respuesta vacía.'}`);
-            }
-          })
-          .withFailureHandler(err => this._mostrarErrorBandeja(`Error de Servidor: ${err.message}`))
-          .obtenerDiccionariosInventario();
+        try {
+          const res = await Portal_Core.ejecutarBackend('obtenerDiccionariosInventario');
+          if (res && res.success && res.data) {
+            Memoria.guardar('diccionariosINV', res.data);
+            this.poblarSelectores(res.data);
+            this.cargarDatosBandeja();
+          } else {
+            this._mostrarErrorBandeja(`Fallo de Base de Datos: ${res ? res.message : 'Respuesta vacía.'}`);
+          }
+        } catch (err) {
+          this._mostrarErrorBandeja(`Error de Servidor: ${err.message}`);
+        }
       }
     },
 
@@ -59,26 +59,28 @@
       }
     },
 
-    cargarDatosBandeja: function() {
+    cargarDatosBandeja: async function() {
       const cat  = document.getElementById('inv-filtro-categoria').value;
       const edif = document.getElementById('inv-filtro-edificio').value;
 
       this._mostrarSpinnerBandeja('Consultando inventario...');
 
-      google.script.run
-        .withSuccessHandler(res => {
-          if (!res || !res.success) {
-            this._mostrarErrorBandeja(res ? res.message : 'Sin respuesta del servidor.');
-            return;
-          }
-          this.estadoBandeja.datosOriginales = res.data || [];
-          this.procesarFiltrosLocales();
-        })
-        .withFailureHandler(err => this._mostrarErrorBandeja(err.message))
-        .obtenerInventarioBackend({
+      try {
+        const payload = {
           categoria_id: cat  ? parseInt(cat)  : null,
           edificio_id:  edif ? parseInt(edif) : null
-        });
+        };
+        const res = await Portal_Core.ejecutarBackend('obtenerInventarioBackend', payload);
+        
+        if (!res || !res.success) {
+          this._mostrarErrorBandeja(res ? res.message : 'Sin respuesta del servidor.');
+          return;
+        }
+        this.estadoBandeja.datosOriginales = res.data || [];
+        this.procesarFiltrosLocales();
+      } catch (err) {
+        this._mostrarErrorBandeja(err.message);
+      }
     },
 
     filtrarBandejaDebounced: function() {
@@ -222,7 +224,7 @@
       if (estadoEl) estadoEl.value = '';
 
       this._toggleCamposAlta();
-      document.getElementById('modal-inv-alta').classList.remove('hidden');
+      Portal_Core.abrirModal('modal-inv-alta');
     },
 
     _toggleCamposAlta: function() {
@@ -236,7 +238,7 @@
 
     toggleCamposAlta: function() { this._toggleCamposAlta(); },
 
-    guardarNuevoActivo: function() {
+    guardarNuevoActivo: async function() {
       const selectCat = document.getElementById('alta-inv-categoria');
       if (!selectCat.value) return Portal_Core.mostrarToast('warning', 'Faltan Datos', 'La categoría es obligatoria.');
       if (!document.getElementById('alta-inv-estado').value)   return Portal_Core.mostrarToast('warning', 'Faltan Datos', 'El estado es obligatorio.');
@@ -272,20 +274,24 @@
       btn.disabled = true;
       btn.innerHTML = '<i class="fas fa-spinner spinner"></i>';
 
-      google.script.run
-        .withSuccessHandler(res => {
-          btn.disabled = false;
-          btn.innerHTML = '<i class="fas fa-save" style="margin-right:5px;"></i> Registrar artículo';
-          if (res.success) {
-            Portal_Core.cerrarModal('modal-inv-alta');
-            Portal_Core.mostrarToast('success', 'Éxito', 'Artículo registrado correctamente.');
-            this.cargarDatosBandeja();
-            this.mostrarQRCard(res.id_qr, payload.modelo || 'Artículo Nuevo');
-          } else {
-            Portal_Core.mostrarToast('error', 'Error BD', res.message);
-          }
-        })
-        .crearActivoBackend(payload, window.USUARIO_ACTUAL.idAgente);
+      try {
+        const res = await Portal_Core.ejecutarBackend('crearActivoBackend', payload, window.USUARIO_ACTUAL.idAgente);
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-save" style="margin-right:5px;"></i> Registrar artículo';
+        
+        if (res.success) {
+          Portal_Core.cerrarModal('modal-inv-alta');
+          Portal_Core.mostrarToast('success', 'Éxito', 'Artículo registrado correctamente.');
+          this.cargarDatosBandeja();
+          this.mostrarQRCard(res.id_qr, payload.modelo || 'Artículo Nuevo');
+        } else {
+          Portal_Core.mostrarToast('error', 'Error BD', res.message);
+        }
+      } catch (err) {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-save" style="margin-right:5px;"></i> Registrar artículo';
+        Portal_Core.mostrarToast('error', 'Error de Red', err.message);
+      }
     },
 
     mostrarQRCard: function(idActivo, marcaModelo) {
@@ -293,7 +299,7 @@
       document.getElementById('qr-modal-subtitle').innerText = idActivo;
       document.getElementById('qr-modal-img').src =
         `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(idActivo)}&margin=0`;
-      document.getElementById('modal-ver-qr').classList.remove('hidden');
+      Portal_Core.abrirModal('modal-ver-qr');
     },
 
     _llenarSelect: function(id, arreglo, placeholder = 'Todas las opciones') {

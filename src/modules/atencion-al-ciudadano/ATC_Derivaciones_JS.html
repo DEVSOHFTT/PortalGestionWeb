@@ -16,9 +16,6 @@
 
   Object.assign(window.ATC_App, {
 
-    // =========================================================
-    // ABRIR MODAL
-    // =========================================================
     abrirModalDerivar: function() {
       const cache = Memoria.leer('diccionariosATC');
       if (!cache || !cache.tipos_destinatario) {
@@ -36,13 +33,9 @@
       btn.disabled  = false;
       btn.innerHTML = '<i class="fas fa-paper-plane"></i> Ejecutar Derivación';
 
-      document.getElementById('modal-derivar').classList.remove('hidden');
+      Portal_Core.abrirModal('modal-derivar');
     },
 
-    // =========================================================
-    // CARGA DINÁMICA DE DESTINOS
-    // Se llama al cambiar el tipo de destinatario en el select.
-    // =========================================================
     cambiarTipoDestinoDerivacion: function() {
       const tipo       = document.getElementById('modal-der-tipo').value;
       const container  = document.getElementById('modal-der-box-destino');
@@ -61,33 +54,19 @@
       container.classList.remove('hidden');
       select.required = true;
 
-      // Tipo 1 → Agente interno
       if (tipo === '1' && cacheGlobal && cacheGlobal.agentes) {
         label.innerHTML = 'Agente Responsable <span style="color:var(--danger)">*</span>';
-        select.innerHTML += cacheGlobal.agentes
-          .map(a => `<option value="${a.id}">${a.apellido}, ${a.nombre}</option>`)
-          .join('');
-
-      // Tipo 2 → Área interna
+        select.innerHTML += cacheGlobal.agentes.map(a => `<option value="${a.id}">${a.apellido}, ${a.nombre}</option>`).join('');
       } else if (tipo === '2' && cacheGlobal && cacheGlobal.areas) {
         label.innerHTML = 'Área Destino <span style="color:var(--danger)">*</span>';
-        select.innerHTML += cacheGlobal.areas
-          .map(a => `<option value="${a.id}">${a.nombre}</option>`)
-          .join('');
-
-      // Tipo 3 → Organismo externo
+        select.innerHTML += cacheGlobal.areas.map(a => `<option value="${a.id}">${a.nombre}</option>`).join('');
       } else if (tipo === '3' && cache && cache.organismos) {
         label.innerHTML = 'Organismo Externo <span style="color:var(--danger)">*</span>';
-        select.innerHTML += cache.organismos
-          .map(o => `<option value="${o.id}">${o.nombre}</option>`)
-          .join('');
+        select.innerHTML += cache.organismos.map(o => `<option value="${o.id}">${o.nombre}</option>`).join('');
       }
     },
 
-    // =========================================================
-    // GUARDAR DERIVACIÓN
-    // =========================================================
-    guardarDerivacion: function() {
+    guardarDerivacion: async function() {
       const tipoDestino = document.getElementById('modal-der-tipo').value;
       const destinoId   = document.getElementById('modal-der-destino').value;
       const selectDest  = document.getElementById('modal-der-destino');
@@ -105,32 +84,29 @@
 
       const payload = {
         recepcion_id:        this.estadoDetalle.idCaso,
-        agente_origen_id:    window.USUARIO_ACTUAL.idAgente,
         tipo_destinatario_id: parseInt(tipoDestino),
         destino_id:          destinoId,
         destino_nombre:      destinoNombre,
         motivo_derivacion:   motivo
       };
 
-      google.script.run
-        .withSuccessHandler(res => {
-          if (res.success) {
-            Portal_Core.mostrarToast('success', 'Caso Derivado', 'El caso se derivó exitosamente.');
-            Portal_Core.cerrarModal('modal-derivar');
-            this.checkNotificaciones();
-            this.iniciarDetalle(this.estadoDetalle.idCaso);
-          } else {
-            Portal_Core.mostrarToast('error', 'Error SQL', res.message);
-            btn.disabled  = false;
-            btn.innerHTML = '<i class="fas fa-paper-plane"></i> Ejecutar Derivación';
-          }
-        })
-        .withFailureHandler(err => {
-          Portal_Core.mostrarToast('error', 'Fallo de Red', err.message);
+      try {
+        const res = await Portal_Core.ejecutarBackend('derivarCasoBackend', payload);
+        if (res.success) {
+          Portal_Core.mostrarToast('success', 'Caso Derivado', 'El caso se derivó exitosamente.');
+          Portal_Core.cerrarModal('modal-derivar');
+          this.checkNotificaciones();
+          this.iniciarDetalle(this.estadoDetalle.idCaso);
+        } else {
+          Portal_Core.mostrarToast('error', 'Error SQL', res.message);
           btn.disabled  = false;
           btn.innerHTML = '<i class="fas fa-paper-plane"></i> Ejecutar Derivación';
-        })
-        .derivarCasoBackend(payload);
+        }
+      } catch (err) {
+        Portal_Core.mostrarToast('error', 'Fallo de Red', err.message);
+        btn.disabled  = false;
+        btn.innerHTML = '<i class="fas fa-paper-plane"></i> Ejecutar Derivación';
+      }
     }
 
   });

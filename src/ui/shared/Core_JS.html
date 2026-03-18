@@ -9,11 +9,57 @@
    *   - Depende de: AppState_JS (ninguna dependencia de estado directa,
    *     solo necesita que window.Portal_Core exista).
    * ========================================================================
+
+   * ========================================================================
+   * Core_JS.html
+   * PROYECTO: Portal de Gestión - Defensoría del Pueblo
+   * RESPONSABILIDAD: Utilidades de UI puras y reutilizables.
+   * ========================================================================
    */
 
   window.Portal_Core = window.Portal_Core || {};
 
   Object.assign(window.Portal_Core, {
+
+    // =========================================================
+    // API GATEWAY: WRAPPER PARA GOOGLE APPS SCRIPT
+    // =========================================================
+
+    /**
+     * Ejecuta una función del backend inyectando el JWT de Supabase automáticamente
+     * y devolviendo una Promesa para poder usar async/await.
+     * * @param {string} nombreFuncion - El nombre exacto de la función en el .gs
+     * @param  {...any} argumentos - Los parámetros que requiere la función (sin contar el token)
+     * @returns {Promise<any>}
+     */
+    
+    ejecutarBackend: async function(nombreFuncion, ...argumentos) {
+      try {
+        // 1. Validar y obtener la sesión actual
+        if (!window.DB) throw new Error("Cliente de base de datos no inicializado.");
+        
+        const sesion = await window.DB.getSession();
+        const token = sesion ? sesion.access_token : null;
+
+        if (!token) {
+          this.mostrarToast('error', 'Sesión Expirada', 'Por favor, inicie sesión nuevamente.');
+          // Opcional: forzar cierre de sesión aquí
+          throw new Error("No hay un token de acceso válido.");
+        }
+
+        // 2. Envolver google.script.run en una Promesa nativa
+        return new Promise((resolve, reject) => {
+          google.script.run
+            .withSuccessHandler(res => resolve(res))
+            .withFailureHandler(err => reject(err))
+            [nombreFuncion](token, ...argumentos); // Se inyecta el token como 1er parámetro
+        });
+
+      } catch (error) {
+        console.error(`[API_Gateway] Fallo en ${nombreFuncion}:`, error);
+        throw error; // Se relanza para que el módulo lo maneje si quiere
+      }
+    },
 
     // =========================================================
     // SONIDO
@@ -70,6 +116,34 @@
     },
 
     // =========================================================
+    // MANEJADOR DE MODALES (Zero-DOM-Hacks)
+    // =========================================================
+    abrirModal: function(idModal) {
+      const modal = document.getElementById(idModal);
+      if (!modal) return;
+      
+      // Mueve el modal al final del body sólo una vez si no está allí,
+      // centralizando el control y evitando hacerlo en la lógica de negocio.
+      if (modal.parentElement !== document.body) {
+        document.body.appendChild(modal);
+      }
+      
+      modal.classList.remove('hidden');
+      document.body.style.overflow = 'hidden'; // Previene el scroll del fondo
+    },
+
+    cerrarModal: function(idModal) {
+      const modal = document.getElementById(idModal);
+      if (modal) {
+        modal.classList.add('hidden');
+        // Restaura el scroll solo si no hay otros modales abiertos
+        if (document.querySelectorAll('.modal-overlay:not(.hidden)').length === 0) {
+           document.body.style.overflow = '';
+        }
+      }
+    },
+
+    // =========================================================
     // MODAL DE CONFIRMACIÓN
     // =========================================================
     confirmCallback: null,
@@ -79,23 +153,18 @@
       document.getElementById('confirm-title').innerText = titulo;
       document.getElementById('confirm-msg').innerText   = mensaje;
       this.confirmCallback = onConfirm;
-      document.getElementById('custom-confirm-modal').classList.remove('hidden');
+      this.abrirModal('custom-confirm-modal');
     },
 
     ejecutarConfirmacion: function() {
-      document.getElementById('custom-confirm-modal').classList.add('hidden');
+      this.cerrarModal('custom-confirm-modal');
       if (typeof this.confirmCallback === 'function') this.confirmCallback();
       this.confirmCallback = null;
     },
 
     cerrarConfirmacion: function() {
-      document.getElementById('custom-confirm-modal').classList.add('hidden');
+      this.cerrarModal('custom-confirm-modal');
       this.confirmCallback = null;
-    },
-
-    cerrarModal: function(idModal) {
-      const modal = document.getElementById(idModal);
-      if (modal) modal.classList.add('hidden');
     },
 
     // =========================================================

@@ -26,9 +26,6 @@
     return result;
   }
 
-  /**
-   * Renderiza permisos con grid de 3 columnas: checkbox | código | descripción
-   */
   function _renderizarPermisos(containerId, permisos, seleccionados, cssClass) {
     const container = document.getElementById(containerId);
     if (!container) return;
@@ -114,7 +111,7 @@
         cargarModulo('PortalHome');
         return;
       }
-      // Mover todos los modales al body para bloqueo global correcto
+      
       ['modal-crear-usuario','modal-reset-password','modal-editar-usuario'].forEach(id => {
         const m = document.getElementById(id);
         if (m && m.parentElement !== document.body) document.body.appendChild(m);
@@ -122,25 +119,23 @@
       this.cargarUsuarios();
     },
 
-    cargarUsuarios: function() {
+    cargarUsuarios: async function() {
       const loader = document.getElementById('admin-usr-loader');
       const tabla  = document.getElementById('admin-usr-tabla');
       if (loader) loader.classList.remove('hidden');
       if (tabla)  tabla.classList.add('hidden');
 
-      google.script.run
-        .withSuccessHandler(res => {
-          if (loader) loader.classList.add('hidden');
-          if (!res.success) { Portal_Core.mostrarToast('error', 'Error', res.message); return; }
-          this._todos = res.data || [];
-          this._filtrarLocal();
-          if (tabla) tabla.classList.remove('hidden');
-        })
-        .withFailureHandler(err => {
-          if (loader) loader.classList.add('hidden');
-          Portal_Core.mostrarToast('error', 'Error de Red', err.message);
-        })
-        .listarUsuariosSistema();
+      try {
+        const res = await Portal_Core.ejecutarBackend('listarUsuariosSistema');
+        if (loader) loader.classList.add('hidden');
+        if (!res.success) { Portal_Core.mostrarToast('error', 'Error', res.message); return; }
+        this._todos = res.data || [];
+        this._filtrarLocal();
+        if (tabla) tabla.classList.remove('hidden');
+      } catch (err) {
+        if (loader) loader.classList.add('hidden');
+        Portal_Core.mostrarToast('error', 'Error de Red', err.message);
+      }
     },
 
     _filtrarLocal: function() {
@@ -218,7 +213,6 @@
         }).join('');
     },
 
-    // ── TABS ──────────────────────────────────────
     _tabCrear: function(i) {
       document.querySelectorAll('#modal-crear-usuario .usr-tab-btn').forEach((b,idx) => b.classList.toggle('active', idx===i));
       document.querySelectorAll('#modal-crear-usuario .usr-tab-panel').forEach((p,idx) => p.classList.toggle('active', idx===i));
@@ -228,10 +222,8 @@
       document.querySelectorAll('#modal-editar-usuario .usr-tab-panel').forEach((p,idx) => p.classList.toggle('active', idx===i));
     },
 
-    // ── MODAL CREAR ───────────────────────────────
-    abrirModalCrear: function() {
-      const m = document.getElementById('modal-crear-usuario');
-      if (m && m.parentElement !== document.body) document.body.appendChild(m);
+    abrirModalCrear: async function() {
+      Portal_Core.abrirModal('modal-crear-usuario');
 
       document.getElementById('adm-agente').value       = '';
       document.getElementById('adm-password').value     = '';
@@ -244,15 +236,15 @@
       btn.innerHTML = '<i class="fas fa-save" style="margin-right:5px;"></i> Crear usuario';
 
       this._tabCrear(0);
-      m.classList.remove('hidden');
 
-      google.script.run
-        .withSuccessHandler(res => {
-          if (!res.success) { Portal_Core.mostrarToast('error', 'Error', res.message); return; }
-          this._cache = res.data;
-          this._poblarFormulario(res.data);
-        })
-        .obtenerDiccionariosUsuarios();
+      try {
+        const res = await Portal_Core.ejecutarBackend('obtenerDiccionariosUsuarios');
+        if (!res.success) { Portal_Core.mostrarToast('error', 'Error', res.message); return; }
+        this._cache = res.data;
+        this._poblarFormulario(res.data);
+      } catch (err) {
+        Portal_Core.mostrarToast('error', 'Error de red', err.message);
+      }
     },
 
     _poblarFormulario: function(data) {
@@ -274,7 +266,7 @@
       document.getElementById('adm-password').value = p;
     },
 
-    guardarUsuario: function() {
+    guardarUsuario: async function() {
       const dni      = document.getElementById('adm-agente').value;
       const password = document.getElementById('adm-password').value.trim();
       const tipoId   = document.getElementById('adm-tipo-usuario').value;
@@ -288,27 +280,27 @@
       const btn = document.getElementById('btn-crear-usuario');
       btn.disabled = true; btn.innerHTML = '<i class="fas fa-circle-notch spinner"></i> Creando...';
 
-      google.script.run
-        .withSuccessHandler(res => {
-          btn.disabled = false; btn.innerHTML = '<i class="fas fa-save" style="margin-right:5px;"></i> Crear usuario';
-          if (res.success) { Portal_Core.cerrarModal('modal-crear-usuario'); Portal_Core.mostrarToast('success','Usuario Creado',res.message); this.cargarUsuarios(); }
-          else Portal_Core.mostrarToast('error','Error',res.message);
-        })
-        .withFailureHandler(err => {
-          btn.disabled = false; btn.innerHTML = '<i class="fas fa-save" style="margin-right:5px;"></i> Crear usuario';
-          Portal_Core.mostrarToast('error','Error de Red',err.message);
-        })
-        .crearUsuarioSistema({ dni, password, tipo_usuario_id: tipoId, permisos_ids: permisosIds });
+      try {
+        const res = await Portal_Core.ejecutarBackend('crearUsuarioSistema', { dni, password, tipo_usuario_id: tipoId, permisos_ids: permisosIds });
+        btn.disabled = false; btn.innerHTML = '<i class="fas fa-save" style="margin-right:5px;"></i> Crear usuario';
+        if (res.success) { 
+          Portal_Core.cerrarModal('modal-crear-usuario'); 
+          Portal_Core.mostrarToast('success','Usuario Creado',res.message); 
+          this.cargarUsuarios(); 
+        } else {
+          Portal_Core.mostrarToast('error','Error',res.message);
+        }
+      } catch (err) {
+        btn.disabled = false; btn.innerHTML = '<i class="fas fa-save" style="margin-right:5px;"></i> Crear usuario';
+        Portal_Core.mostrarToast('error','Error de Red',err.message);
+      }
     },
 
-    // ── RESET PASSWORD ────────────────────────────
     abrirResetPassword: function(dni, nombreCompleto) {
-      const m = document.getElementById('modal-reset-password');
-      if (m && m.parentElement !== document.body) document.body.appendChild(m);
       document.getElementById('reset-dni').value            = dni;
       document.getElementById('reset-nombre-agente').innerText = nombreCompleto;
       document.getElementById('reset-nuevo-pass').value     = '';
-      m.classList.remove('hidden');
+      Portal_Core.abrirModal('modal-reset-password');
     },
 
     generarPasswordReset: function() {
@@ -317,70 +309,77 @@
       document.getElementById('reset-nuevo-pass').value = p;
     },
 
-    ejecutarReset: function() {
+    ejecutarReset: async function() {
       const dni       = document.getElementById('reset-dni').value;
       const nuevoPass = document.getElementById('reset-nuevo-pass').value.trim();
       if (!nuevoPass || nuevoPass.length < 6) return Portal_Core.mostrarToast('warning','Validación','Mínimo 6 caracteres.');
       const btn = document.getElementById('btn-reset-pass');
       btn.disabled = true; btn.innerHTML = '<i class="fas fa-circle-notch spinner"></i>';
-      google.script.run
-        .withSuccessHandler(res => {
-          btn.disabled = false; btn.innerHTML = '<i class="fas fa-sync-alt" style="margin-right:5px;"></i> Resetear';
-          if (res.success) { Portal_Core.cerrarModal('modal-reset-password'); Portal_Core.mostrarToast('success','Contraseña Reseteada',res.message); }
-          else Portal_Core.mostrarToast('error','Error',res.message);
-        })
-        .resetearPasswordUsuario(dni, nuevoPass);
+
+      try {
+        const res = await Portal_Core.ejecutarBackend('resetearPasswordUsuario', dni, nuevoPass);
+        btn.disabled = false; btn.innerHTML = '<i class="fas fa-sync-alt" style="margin-right:5px;"></i> Resetear';
+        if (res.success) { 
+          Portal_Core.cerrarModal('modal-reset-password'); 
+          Portal_Core.mostrarToast('success','Contraseña Reseteada',res.message); 
+        } else {
+          Portal_Core.mostrarToast('error','Error',res.message);
+        }
+      } catch (err) {
+        btn.disabled = false; btn.innerHTML = '<i class="fas fa-sync-alt" style="margin-right:5px;"></i> Resetear';
+        Portal_Core.mostrarToast('error', 'Error de Red', err.message);
+      }
     },
 
-    // ── DESACTIVAR / REACTIVAR ────────────────────
     confirmarDesactivar: function(usuarioId, nombre) {
-      Portal_Core.mostrarConfirmacion('¿Desactivar usuario?', `El usuario de ${nombre} será desactivado.`, () => {
-        google.script.run
-          .withSuccessHandler(res => {
-            if (res.success) { Portal_Core.mostrarToast('success','Desactivado',res.message); this.cargarUsuarios(); }
-            else Portal_Core.mostrarToast('error','Error',res.message);
-          })
-          .desactivarUsuario(usuarioId);
+      Portal_Core.mostrarConfirmacion('¿Desactivar usuario?', `El usuario de ${nombre} será desactivado.`, async () => {
+        try {
+          const res = await Portal_Core.ejecutarBackend('desactivarUsuario', usuarioId);
+          if (res.success) { 
+            Portal_Core.mostrarToast('success','Desactivado',res.message); 
+            this.cargarUsuarios(); 
+          } else {
+            Portal_Core.mostrarToast('error','Error',res.message);
+          }
+        } catch (err) {
+          Portal_Core.mostrarToast('error', 'Error de Red', err.message);
+        }
       });
     },
 
-    // ── EDITAR USUARIO ────────────────────────────
-    abrirEditar: function(usuarioId) {
-      const modal = document.getElementById('modal-editar-usuario');
-      if (modal && modal.parentElement !== document.body) document.body.appendChild(modal);
-
+    abrirEditar: async function(usuarioId) {
+      Portal_Core.abrirModal('modal-editar-usuario');
       const grid = document.getElementById('edit-usr-permisos-grid');
       if (grid) grid.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:0.82rem;"><i class="fas fa-circle-notch spinner"></i> Cargando...</div>';
       this._tabEditar(0);
-      modal.classList.remove('hidden');
 
-      google.script.run
-        .withSuccessHandler(res => {
-          if (!res.success) { Portal_Core.cerrarModal('modal-editar-usuario'); Portal_Core.mostrarToast('error','Error',res.message); return; }
-          const d = res.data, u = d.usuario;
+      try {
+        const res = await Portal_Core.ejecutarBackend('obtenerUsuarioConPermisos', usuarioId);
+        if (!res.success) { Portal_Core.cerrarModal('modal-editar-usuario'); Portal_Core.mostrarToast('error','Error',res.message); return; }
+        const d = res.data, u = d.usuario;
 
-          document.getElementById('edit-usr-id').value = u.id;
-          document.getElementById('edit-usr-nombre').innerText = (u.apellido||'') + ', ' + (u.nombre||'');
-          document.getElementById('edit-usr-dni-val').innerText = u.username;
+        document.getElementById('edit-usr-id').value = u.id;
+        document.getElementById('edit-usr-nombre').innerText = (u.apellido||'') + ', ' + (u.nombre||'');
+        document.getElementById('edit-usr-dni-val').innerText = u.username;
 
-          // Avatar
-          const AV_COLORS = ['#7c3aed','#059669','#2563eb','#d97706','#db2777'];
-          const av = document.getElementById('edit-usr-avatar');
-          if (av) {
-            av.style.background = (AV_COLORS[Math.abs(u.id.charCodeAt(0) - 65) % AV_COLORS.length]) + '22';
-            av.style.color = AV_COLORS[Math.abs(u.id.charCodeAt(0) - 65) % AV_COLORS.length];
-            av.innerText = (u.apellido||'S')[0] + (u.nombre||'D')[0];
-          }
+        const AV_COLORS = ['#7c3aed','#059669','#2563eb','#d97706','#db2777'];
+        const av = document.getElementById('edit-usr-avatar');
+        if (av) {
+          av.style.background = (AV_COLORS[Math.abs(u.id.charCodeAt(0) - 65) % AV_COLORS.length]) + '22';
+          av.style.color = AV_COLORS[Math.abs(u.id.charCodeAt(0) - 65) % AV_COLORS.length];
+          av.innerText = (u.apellido||'S')[0] + (u.nombre||'D')[0];
+        }
 
-          const selTipo = document.getElementById('edit-usr-tipo');
-          selTipo.innerHTML = d.tipos_usuario.map(t =>
-            `<option value="${t.id}"${t.id === u.tipo_usuario_id ? ' selected' : ''}>${t.nombre} — ${t.descripcion}</option>`
-          ).join('');
+        const selTipo = document.getElementById('edit-usr-tipo');
+        selTipo.innerHTML = d.tipos_usuario.map(t =>
+          `<option value="${t.id}"${t.id === u.tipo_usuario_id ? ' selected' : ''}>${t.nombre} — ${t.descripcion}</option>`
+        ).join('');
 
-          _renderizarPermisos('edit-usr-permisos-grid', d.todos_permisos, d.permisos_actuales, 'edit-permiso-check');
-        })
-        .withFailureHandler(err => { Portal_Core.cerrarModal('modal-editar-usuario'); Portal_Core.mostrarToast('error','Error de Red',err.message); })
-        .obtenerUsuarioConPermisos(usuarioId);
+        _renderizarPermisos('edit-usr-permisos-grid', d.todos_permisos, d.permisos_actuales, 'edit-permiso-check');
+      } catch (err) {
+        Portal_Core.cerrarModal('modal-editar-usuario'); 
+        Portal_Core.mostrarToast('error','Error de Red',err.message);
+      }
     },
 
     seleccionarTodosPermisosEdit: function(valor) {
@@ -388,7 +387,7 @@
       _actualizarContadoresGrupo('edit-usr-permisos-grid', 'edit-permiso-check');
     },
 
-    guardarEdicion: function() {
+    guardarEdicion: async function() {
       const usuarioId  = document.getElementById('edit-usr-id').value;
       const tipoId     = document.getElementById('edit-usr-tipo').value;
       const permisosIds = [];
@@ -397,27 +396,35 @@
       const btn = document.getElementById('btn-guardar-edicion-usr');
       btn.disabled = true; btn.innerHTML = '<i class="fas fa-circle-notch spinner"></i> Guardando...';
 
-      google.script.run
-        .withSuccessHandler(res => {
-          btn.disabled = false; btn.innerHTML = '<i class="fas fa-save" style="margin-right:5px;"></i> Guardar cambios';
-          if (res.success) { Portal_Core.cerrarModal('modal-editar-usuario'); Portal_Core.mostrarToast('success','Actualizado',res.message); AdminUsuarios.cargarUsuarios(); }
-          else Portal_Core.mostrarToast('error','Error',res.message);
-        })
-        .withFailureHandler(err => {
-          btn.disabled = false; btn.innerHTML = '<i class="fas fa-save" style="margin-right:5px;"></i> Guardar cambios';
-          Portal_Core.mostrarToast('error','Error de Red',err.message);
-        })
-        .actualizarUsuarioCompleto(usuarioId, tipoId, permisosIds);
+      try {
+        const res = await Portal_Core.ejecutarBackend('actualizarUsuarioCompleto', usuarioId, tipoId, permisosIds);
+        btn.disabled = false; btn.innerHTML = '<i class="fas fa-save" style="margin-right:5px;"></i> Guardar cambios';
+        if (res.success) { 
+          Portal_Core.cerrarModal('modal-editar-usuario'); 
+          Portal_Core.mostrarToast('success','Actualizado',res.message); 
+          AdminUsuarios.cargarUsuarios(); 
+        } else {
+          Portal_Core.mostrarToast('error','Error',res.message);
+        }
+      } catch (err) {
+        btn.disabled = false; btn.innerHTML = '<i class="fas fa-save" style="margin-right:5px;"></i> Guardar cambios';
+        Portal_Core.mostrarToast('error','Error de Red',err.message);
+      }
     },
 
     confirmarReactivar: function(usuarioId, nombre) {
-      Portal_Core.mostrarConfirmacion('¿Reactivar usuario?', 'El usuario de ' + nombre + ' podrá ingresar nuevamente.', () => {
-        google.script.run
-          .withSuccessHandler(res => {
-            if (res.success) { Portal_Core.mostrarToast('success','Reactivado',res.message); AdminUsuarios.cargarUsuarios(); }
-            else Portal_Core.mostrarToast('error','Error',res.message);
-          })
-          .reactivarUsuario(usuarioId);
+      Portal_Core.mostrarConfirmacion('¿Reactivar usuario?', 'El usuario de ' + nombre + ' podrá ingresar nuevamente.', async () => {
+        try {
+          const res = await Portal_Core.ejecutarBackend('reactivarUsuario', usuarioId);
+          if (res.success) { 
+            Portal_Core.mostrarToast('success','Reactivado',res.message); 
+            AdminUsuarios.cargarUsuarios(); 
+          } else {
+            Portal_Core.mostrarToast('error','Error',res.message);
+          }
+        } catch (err) {
+          Portal_Core.mostrarToast('error', 'Error de Red', err.message);
+        }
       });
     }
   };

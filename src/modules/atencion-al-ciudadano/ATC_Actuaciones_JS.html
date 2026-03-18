@@ -16,9 +16,6 @@
 
   Object.assign(window.ATC_App, {
 
-    // =========================================================
-    // SELECCIÓN VISUAL DEL ESTADO DE ACTUACIÓN
-    // =========================================================
     seleccionarEstadoActuacion: function(idEstado, elemento) {
       document.getElementById('modal-act-estado').value = idEstado;
       const container = document.getElementById('modal-act-estado-group');
@@ -28,32 +25,23 @@
       if (elemento) elemento.classList.add('active');
     },
 
-    // =========================================================
-    // ABRIR MODAL (crear o editar)
-    // =========================================================
     abrirModalActuacion: function(dataEncoded = null) {
       const cache = Memoria.leer('diccionariosATC');
       if (!cache || !cache.tramites || !cache.estados_actuacion) {
         return Portal_Core.mostrarToast('error', 'Faltan Diccionarios', 'Por favor, reinicie su sesión.');
       }
 
-      // Filtrar trámites por categoría del caso actual
       const objCat          = cache.categorias.find(c => c.nombre === this.estadoDetalle.categoriaActual);
       const tramitesFiltrados = objCat
         ? cache.tramites.filter(t => t.categoria_id == objCat.id)
         : cache.tramites;
       Portal_Core.poblarSelect('modal-act-tramite', tramitesFiltrados);
 
-      // Renderizar botones de estado
       const groupEstados = document.getElementById('modal-act-estado-group');
       groupEstados.innerHTML = cache.estados_actuacion
-        .map(e => `<div class="radio-btn-estado"
-                        onclick="ATC_App.seleccionarEstadoActuacion(${e.id}, this)">
-                     ${e.nombre}
-                   </div>`)
+        .map(e => `<div class="radio-btn-estado" onclick="ATC_App.seleccionarEstadoActuacion(${e.id}, this)">${e.nombre}</div>`)
         .join('');
 
-      // Referencias a elementos del modal
       const modalId    = document.getElementById('modal-act-id');
       const selTramite = document.getElementById('modal-act-tramite');
       const inputEstado = document.getElementById('modal-act-estado');
@@ -64,7 +52,6 @@
       inputEstado.value = '';
 
       if (dataEncoded) {
-        // Modo edición: pre-cargar datos existentes
         const data       = JSON.parse(decodeURIComponent(dataEncoded));
         modalId.value    = data.actuacion_id;
         selTramite.value = data.tramite_id || '';
@@ -77,7 +64,6 @@
           if (idx !== -1) this.seleccionarEstadoActuacion(data.estado_id, groupEstados.children[idx]);
         }
       } else {
-        // Modo creación
         modalId.value    = '';
         selTramite.value = '';
         modalText.value  = '';
@@ -86,23 +72,17 @@
       }
 
       btnGuardar.disabled = false;
-      document.getElementById('modal-actuacion').classList.remove('hidden');
+      Portal_Core.abrirModal('modal-actuacion');
     },
 
-    // =========================================================
-    // GUARDAR / ACTUALIZAR
-    // =========================================================
-    guardarActuacion: function() {
+    guardarActuacion: async function() {
       const idExistente = document.getElementById('modal-act-id').value;
       const tramite     = document.getElementById('modal-act-tramite').value;
       const estado      = document.getElementById('modal-act-estado').value;
       const texto       = document.getElementById('modal-act-texto').value.trim();
 
       if (!tramite || !estado || !texto) {
-        return Portal_Core.mostrarToast(
-          'warning', 'Campos Obligatorios',
-          'El Tipo de Trámite, el Estado y las Observaciones son obligatorios.'
-        );
+        return Portal_Core.mostrarToast('warning', 'Campos Obligatorios', 'El Tipo de Trámite, el Estado y las Observaciones son obligatorios.');
       }
 
       const btn = document.getElementById('btn-guardar-act');
@@ -111,36 +91,28 @@
 
       const payload = {
         recepcion_id:  this.estadoDetalle.idCaso,
-        agente_id:     window.USUARIO_ACTUAL.idAgente,
         tramite_id:    parseInt(tramite),
         estado_id:     parseInt(estado),
         observaciones: texto
       };
       if (idExistente) payload.id = idExistente;
 
-      google.script.run
-        .withSuccessHandler(res => {
-          if (res.success) {
-            Portal_Core.mostrarToast(
-              'success', 'Éxito',
-              idExistente ? 'Actuación actualizada.' : 'Actuación registrada.'
-            );
-            Portal_Core.cerrarModal('modal-actuacion');
-            this.iniciarDetalle(this.estadoDetalle.idCaso);
-          } else {
-            Portal_Core.mostrarToast('error', 'Error SQL', res.message);
-            btn.disabled  = false;
-            btn.innerHTML = idExistente
-              ? '<i class="fas fa-save"></i> Actualizar'
-              : '<i class="fas fa-save"></i> Registrar';
-          }
-        })
-        .withFailureHandler(err => {
-          Portal_Core.mostrarToast('error', 'Fallo de Red', err.message);
+      try {
+        const res = await Portal_Core.ejecutarBackend('guardarActuacionBackend', payload);
+        if (res.success) {
+          Portal_Core.mostrarToast('success', 'Éxito', idExistente ? 'Actuación actualizada.' : 'Actuación registrada.');
+          Portal_Core.cerrarModal('modal-actuacion');
+          this.iniciarDetalle(this.estadoDetalle.idCaso);
+        } else {
+          Portal_Core.mostrarToast('error', 'Error SQL', res.message);
           btn.disabled  = false;
-          btn.innerHTML = '<i class="fas fa-save"></i> Registrar';
-        })
-        .guardarActuacionBackend(payload);
+          btn.innerHTML = idExistente ? '<i class="fas fa-save"></i> Actualizar' : '<i class="fas fa-save"></i> Registrar';
+        }
+      } catch (err) {
+        Portal_Core.mostrarToast('error', 'Fallo de Red', err.message);
+        btn.disabled  = false;
+        btn.innerHTML = '<i class="fas fa-save"></i> Registrar';
+      }
     }
 
   });

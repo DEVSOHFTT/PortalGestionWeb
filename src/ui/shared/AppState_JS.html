@@ -8,26 +8,52 @@
    *   - No contiene lógica de negocio, UI ni llamadas a GAS.
    *   - Debe ser el PRIMER script cargado en Layout_Main.html.
    * ========================================================================
+ 
+   * ========================================================================
+   * AppState_JS.html
+   * PROYECTO: Portal de Gestión - Defensoría del Pueblo
+   * RESPONSABILIDAD: Gestor de Estado y Persistencia (Agnóstico de módulos).
+   * ========================================================================
+   * CAMBIO ARQUITECTÓNICO: Se elimina el acoplamiento duro con ATC_App e INV_App.
+   * Ahora los módulos deben registrar su estado usando AppState.registerModule().
+   * ========================================================================
    */
 
   // =========================================================
-  // UTILIDAD DE PERSISTENCIA LOCAL
+  // UTILIDAD DE PERSISTENCIA LOCAL (Wrapper Seguro)
   // =========================================================
-  const Memoria = {
-    leer:   (k)    => { try { return JSON.parse(localStorage.getItem(k)); } catch(e) { return null; } },
-    guardar:(k, v) => localStorage.setItem(k, JSON.stringify(v)),
-    borrar: (k)    => localStorage.removeItem(k)
+  window.Memoria = {
+    leer: function(key) { 
+      try { 
+        const item = localStorage.getItem(key);
+        return item ? JSON.parse(item) : null; 
+      } catch(e) { 
+        console.error(`[Memoria] Error leyendo clave ${key}:`, e);
+        return null; 
+      } 
+    },
+    guardar: function(key, value) { 
+      try {
+        localStorage.setItem(key, JSON.stringify(value));
+      } catch(e) {
+        console.error(`[Memoria] Error guardando clave ${key}:`, e);
+      }
+    },
+    borrar: function(key) { 
+      localStorage.removeItem(key); 
+    },
+    limpiarTodo: function() {
+      localStorage.clear();
+    }
   };
 
   // =========================================================
-  // SESIÓN DEL USUARIO
+  // ESTADO GLOBAL DEL SISTEMA (CORE)
   // =========================================================
   window.USUARIO_ACTUAL = null;
 
-  // =========================================================
-  // MAPA DE RUTAS → CONTENEDORES HTML
-  // =========================================================
-  window.MAPA_CONTENEDORES = {
+  // Mapa inmutable de Rutas a Contenedores DOM
+  window.MAPA_CONTENEDORES = Object.freeze({
     'Login':                'view-Login',
     'PortalHome':           'view-PortalHome',
     'MisCasos':             'view-Bandeja',
@@ -38,69 +64,57 @@
     'NuevaRecepcionPaso2':  'view-NuevaRecepcionPaso2',
     'FichaCiudadano':       'view-FichaCiudadano',
     'InventarioBandeja':    'view-InventarioBandeja',
-    'InventarioScan':       'view-InventarioBandeja',   // redirige a la misma vista
+    'InventarioScan':       'view-InventarioBandeja',
     'InventarioFicha':      'view-InventarioFicha',
     'AdminAgentes':         'view-AdminAgentes',
     'AdminUsuarios':        'view-AdminUsuarios'
+  });
+
+  // =========================================================
+  // API PARA REGISTRO DINÁMICO DE MÓDULOS
+  // =========================================================
+  window.AppState = {
+    /**
+     * Registra el namespace de un módulo de negocio dinámicamente si no existe.
+     * @param {string} namespace - Ej: 'ATC_App', 'INV_App'
+     * @param {object} estadoInicial - Objeto con el estado base del módulo
+     */
+    registerModule: function(namespace, estadoInicial = {}) {
+      if (!window[namespace]) {
+        window[namespace] = estadoInicial;
+      } else {
+        // Realiza un merge seguro si el namespace ya fue inicializado parcialmente
+        window[namespace] = { ...estadoInicial, ...window[namespace] };
+      }
+    }
   };
 
   // =========================================================
-  // ESTADO: MÓDULO ATC (Atención al Ciudadano)
+  // INICIALIZACIÓN TEMPRANA (Opcional, para evitar race conditions en carga de scripts)
   // =========================================================
-  window.ATC_App = window.ATC_App || {};
+  
+  // Los módulos ahora se auto-registran. Definimos su estructura base aquí
+  // solo si necesitamos garantizar su estructura antes de que sus scripts carguen.
+  AppState.registerModule('ATC_App', {
+    estadoBandeja: {
+      modulo: '', datos: [], pagina: 1, totalRegistros: 0, itemsPorPagina: 20, terminoBusqueda: ''
+    },
+    estadoDetalle: {
+      idCaso: null, idEstado: null, categoriaActual: null, idCiudadano: null
+    },
+    estadoNuevaRecepcion: {
+      ciudadanoActual: null, casosCiudadanoActual: [], idCasoDuplicadoCache: null, reprogramado: false
+    },
+    estadoFicha: {
+      idCasoOrigen: null, ciudadano: null, casos: []
+    },
+    temporizadores: { bandeja: null }
+  });
 
-  window.ATC_App.estadoBandeja = {
-    modulo:           '',
-    datos:            [],
-    pagina:           1,
-    totalRegistros:   0,
-    itemsPorPagina:   20,
-    terminoBusqueda:  ''
-  };
-
-  window.ATC_App.estadoDetalle = {
-    idCaso:           null,
-    idEstado:         null,
-    categoriaActual:  null,
-    idCiudadano:      null
-  };
-
-  window.ATC_App.estadoNuevaRecepcion = {
-    ciudadanoActual:        null,
-    casosCiudadanoActual:   [],
-    idCasoDuplicadoCache:   null,
-    reprogramado:           false
-  };
-
-  window.ATC_App.estadoFicha = {
-    idCasoOrigen: null,
-    ciudadano:    null,
-    casos:        []
-  };
-
-  window.ATC_App.temporizadores = {
-    bandeja: null
-  };
-
-  // =========================================================
-  // ESTADO: MÓDULO INVENTARIO
-  // FIX: agregadas todas las propiedades que usa Inventario_Bandeja_JS
-  // =========================================================
-  window.INV_App = window.INV_App || {};
-
-  window.INV_App.estadoBandeja = {
-    datosOriginales:  [],    // usada por procesarFiltrosLocales
-    timeoutBusqueda:  null   // usada por filtrarBandejaDebounced
-  };
-
-  window.INV_App.estadoActual = {
-    activo: null,
-    idQR:   null
-  };
-
-  // Variables del scanner (declaradas aquí para que persistan entre navegaciones)
-  window.INV_App._popupQR         = null;
-  window.INV_App._listenerMensaje = null;
-  window.INV_App._stream          = null;
+  AppState.registerModule('INV_App', {
+    estadoBandeja: { datosOriginales: [], timeoutBusqueda: null },
+    estadoActual: { activo: null, idQR: null },
+    _popupQR: null, _listenerMensaje: null, _stream: null
+  });
 
 </script>

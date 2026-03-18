@@ -19,27 +19,21 @@
 
   Object.assign(window.ATC_App, {
 
-    // =========================================================
-    // INICIALIZACIÓN DEL PASO 2
-    // =========================================================
     iniciarNuevaRecepcionPaso2: function() {
       if (!this.estadoNuevaRecepcion.ciudadanoActual) {
-        Portal_Core.mostrarToast('error', 'Error de Sesión',
-          'Ciudadano no seleccionado. Volviendo al Paso 1.');
+        Portal_Core.mostrarToast('error', 'Error de Sesión', 'Ciudadano no seleccionado. Volviendo al Paso 1.');
         cargarModulo('BuscarCiudadano');
         return;
       }
 
       const p = this.estadoNuevaRecepcion.ciudadanoActual;
 
-      // Mostrar nombre y documento del ciudadano en el encabezado
       document.getElementById('p2-ciudadano-nombre').innerText =
         p.apellido && p.apellido !== '-'
           ? `${p.apellido}, ${p.nombre}`.toUpperCase()
           : p.nombre.toUpperCase();
       document.getElementById('p2-ciudadano-dni').innerText = p.cuil || p.dni || 'S/D';
 
-      // Reset del formulario
       document.getElementById('alerta-duplicado').style.display = 'none';
       document.getElementById('form-recepcion-p2').reset();
 
@@ -49,7 +43,6 @@
         btnGuardar.innerHTML = '<i class="fas fa-save" style="margin-right:8px;"></i> Generar Recepción';
       }
 
-      // Ocultar todos los paneles condicionales
       ['nr-container-contacto','p2-box-tel','p2-box-email',
        'p2-box-barrio','container-fecha-manual','container-destino'].forEach(id => {
         document.getElementById(id)?.classList.add('hidden');
@@ -58,10 +51,7 @@
       this.estadoNuevaRecepcion.idCasoDuplicadoCache = null;
       this.setReprogramado(false);
 
-      // Poblar selects desde caché
       const cacheATC    = Memoria.leer('diccionariosATC');
-      const cacheGlobal = Memoria.leer('diccionariosGlobales');
-
       if (cacheATC) {
         Portal_Core.poblarSelect('nr-canal',         cacheATC.canales);
         Portal_Core.poblarSelect('nr-categoria',     cacheATC.categorias);
@@ -71,10 +61,6 @@
       }
     },
 
-    // =========================================================
-    // LÓGICA DEL CANAL DE ATENCIÓN
-    // Muestra campos extra según el canal seleccionado.
-    // =========================================================
     cambiarCanalPaso2: function() {
       const canal     = document.getElementById('nr-canal');
       const container = document.getElementById('nr-container-contacto');
@@ -84,37 +70,28 @@
       const inputTel  = document.getElementById('nr-telefono');
       const inputEmail = document.getElementById('nr-email');
 
-      // Resetear todos los campos de contacto
       [boxTel, boxEmail, boxBarrio].forEach(b => b.classList.add('hidden'));
       if (inputTel)   { inputTel.required   = false; inputTel.value   = ''; }
       if (inputEmail) { inputEmail.required = false; inputEmail.value = ''; }
 
       const nombreCanal = canal.options[canal.selectedIndex]?.text.toLowerCase() || '';
 
-      if (nombreCanal.includes('teléfono') || nombreCanal.includes('telefono') ||
-          nombreCanal.includes('whatsapp')) {
+      if (nombreCanal.includes('teléfono') || nombreCanal.includes('telefono') || nombreCanal.includes('whatsapp')) {
         container.classList.remove('hidden');
         boxTel.classList.remove('hidden');
         if (inputTel) inputTel.required = true;
-
       } else if (nombreCanal.includes('email') || nombreCanal.includes('correo')) {
         container.classList.remove('hidden');
         boxEmail.classList.remove('hidden');
         if (inputEmail) inputEmail.required = true;
-
       } else if (nombreCanal.includes('territorio') || nombreCanal.includes('operativo')) {
         container.classList.remove('hidden');
         boxBarrio.classList.remove('hidden');
-
       } else {
         container.classList.add('hidden');
       }
     },
 
-    // =========================================================
-    // LÓGICA DEL TIPO DE DESTINO
-    // Carga destinos dinámicamente según el tipo seleccionado.
-    // =========================================================
     cambiarTipoDestino: function() {
       const tipo        = document.getElementById('nr-tipo-destino').value;
       const container   = document.getElementById('container-destino');
@@ -133,38 +110,20 @@
       container.classList.remove('hidden');
       select.required = true;
 
-      // Tipo 1 → Agente interno (pre-selecciona el agente actual)
       if (tipo === '1' && cacheGlobal && cacheGlobal.agentes) {
         label.innerHTML = 'Agente Responsable <span style="color:var(--danger)">*</span>';
-        select.innerHTML += cacheGlobal.agentes
-          .map(a => `<option value="${a.id}">${a.apellido}, ${a.nombre}</option>`)
-          .join('');
-        if (window.USUARIO_ACTUAL?.idAgente) {
-          select.value = String(window.USUARIO_ACTUAL.idAgente);
-        }
-
-      // Tipo 2 → Área interna (pre-selecciona el área actual)
+        select.innerHTML += cacheGlobal.agentes.map(a => `<option value="${a.id}">${a.apellido}, ${a.nombre}</option>`).join('');
+        if (window.USUARIO_ACTUAL?.idAgente) select.value = String(window.USUARIO_ACTUAL.idAgente);
       } else if (tipo === '2' && cacheGlobal && cacheGlobal.areas) {
         label.innerHTML = 'Área Destino <span style="color:var(--danger)">*</span>';
-        select.innerHTML += cacheGlobal.areas
-          .map(a => `<option value="${a.id}">${a.nombre}</option>`)
-          .join('');
-        if (window.USUARIO_ACTUAL?.idArea) {
-          select.value = String(window.USUARIO_ACTUAL.idArea);
-        }
-
-      // Tipo 3 → Organismo externo
+        select.innerHTML += cacheGlobal.areas.map(a => `<option value="${a.id}">${a.nombre}</option>`).join('');
+        if (window.USUARIO_ACTUAL?.idArea) select.value = String(window.USUARIO_ACTUAL.idArea);
       } else if (tipo === '3' && cacheATC && cacheATC.organismos) {
         label.innerHTML = 'Organismo Externo <span style="color:var(--danger)">*</span>';
-        select.innerHTML += cacheATC.organismos
-          .map(o => `<option value="${o.id}">${o.nombre}</option>`)
-          .join('');
+        select.innerHTML += cacheATC.organismos.map(o => `<option value="${o.id}">${o.nombre}</option>`).join('');
       }
     },
 
-    // =========================================================
-    // TOGGLE DE CARGA DIFERIDA (REPROGRAMADO)
-    // =========================================================
     setReprogramado: function(valor) {
       this.estadoNuevaRecepcion.reprogramado = valor;
 
@@ -186,10 +145,6 @@
       }
     },
 
-    // =========================================================
-    // DETECCIÓN DE CASO DUPLICADO (cliente)
-    // Se llama al cambiar la categoría seleccionada.
-    // =========================================================
     verificarDuplicadoFront: function() {
       const catSeleccionada = document.getElementById('nr-categoria').value;
       const alerta          = document.getElementById('alerta-duplicado');
@@ -216,17 +171,13 @@
       }
     },
 
-    // =========================================================
-    // GUARDAR NUEVA RECEPCIÓN
-    // =========================================================
-    guardarNuevaRecepcion: function(e, forzarDuplicado = false) {
+    guardarNuevaRecepcion: async function(e, forzarDuplicado = false) {
       if (e) e.preventDefault();
 
       const btn            = document.getElementById('btn-guardar-nr');
       const alerta         = document.getElementById('alerta-duplicado');
       const alertaVisible  = alerta && !alerta.classList.contains('hidden');
 
-      // Bloquear si hay duplicado sin forzar
       if (alertaVisible && !forzarDuplicado) {
         return Portal_Core.mostrarConfirmacion(
           '¿Crear trámite múltiple?',
@@ -248,7 +199,6 @@
         const tipoDestino = document.getElementById('nr-tipo-destino').value;
         const destinoId   = document.getElementById('nr-destino-id').value;
 
-        // Recolectar datos de contacto según visibilidad
         let telefonoIngresado = null;
         let emailIngresado    = null;
         let observacionesFinales = document.getElementById('nr-observaciones').value.trim();
@@ -268,9 +218,7 @@
         }
 
         const paquete = {
-          agente_creador_id: window.USUARIO_ACTUAL.idAgente,
-          area_creadora_id:  window.USUARIO_ACTUAL.idArea,
-          ciudadano:         this.estadoNuevaRecepcion.ciudadanoActual,
+          ciudadano: this.estadoNuevaRecepcion.ciudadanoActual,
           recepcion: {
             canal_id:              document.getElementById('nr-canal').value,
             categoria_id:          document.getElementById('nr-categoria').value,
@@ -286,34 +234,28 @@
           }
         };
 
-        google.script.run
-          .withSuccessHandler(res => {
-            _reset();
-            if (res.success) {
-              Portal_Core.mostrarToast('success', 'Éxito', 'Caso registrado correctamente.');
-              this.estadoNuevaRecepcion.ciudadanoActual = null;
-              this.checkNotificaciones();
-              cargarModulo('MisCasos');
-            } else if (res.isDuplicado) {
-              this.estadoNuevaRecepcion.idCasoDuplicadoCache = res.casoDuplicadoId;
-              Portal_Core.mostrarConfirmacion(
-                'Caso Existente',
-                `Ya existe el Caso #${res.casoDuplicadoId.substring(0, 8).toUpperCase()}. ¿Forzar creación?`,
-                () => window.ATC_App.guardarNuevaRecepcion(null, true)
-              );
-            } else {
-              Portal_Core.mostrarToast('error', 'Error del Sistema', res.message);
-            }
-          })
-          .withFailureHandler(err => {
-            _reset();
-            Portal_Core.mostrarToast('error', 'Fallo de Red', err.message);
-          })
-          .registrarRecepcionBackend(paquete);
+        const res = await Portal_Core.ejecutarBackend('registrarRecepcionBackend', paquete);
+        
+        _reset();
+        if (res.success) {
+          Portal_Core.mostrarToast('success', 'Éxito', 'Caso registrado correctamente.');
+          this.estadoNuevaRecepcion.ciudadanoActual = null;
+          this.checkNotificaciones();
+          cargarModulo('MisCasos');
+        } else if (res.isDuplicado) {
+          this.estadoNuevaRecepcion.idCasoDuplicadoCache = res.casoDuplicadoId;
+          Portal_Core.mostrarConfirmacion(
+            'Caso Existente',
+            `Ya existe el Caso #${res.casoDuplicadoId.substring(0, 8).toUpperCase()}. ¿Forzar creación?`,
+            () => window.ATC_App.guardarNuevaRecepcion(null, true)
+          );
+        } else {
+          Portal_Core.mostrarToast('error', 'Error del Sistema', res.message);
+        }
 
       } catch(err) {
         _reset();
-        Portal_Core.mostrarToast('error', 'Error en el Navegador', err.message);
+        Portal_Core.mostrarToast('error', 'Error de Red', err.message);
       }
     }
 

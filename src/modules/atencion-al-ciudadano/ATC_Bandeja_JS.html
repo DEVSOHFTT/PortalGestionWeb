@@ -16,19 +16,12 @@
 
     timeoutBuscador: null,
 
-    // =========================================================
-    // INICIALIZACIÓN
-    // =========================================================
-    iniciarBandeja: function(modulo) {
+    iniciarBandeja: async function(modulo) {
       this.estadoBandeja.modulo            = modulo;
       this.estadoBandeja.pagina            = 1;
       this.estadoBandeja.terminoBusqueda   = '';
 
-      const titulos = {
-        MisCasos:      'Mis Casos',
-        MiArea:        'Mi Área',
-        TodosLosCasos: 'Histórico General'
-      };
+      const titulos = { MisCasos: 'Mis Casos', MiArea: 'Mi Área', TodosLosCasos: 'Histórico General' };
 
       document.getElementById('bandeja-titulo').innerText = titulos[modulo] || 'Casos';
       document.getElementById('ruta-actual').innerText    = titulos[modulo] || 'Bandeja';
@@ -39,7 +32,6 @@
         inputBuscador.placeholder = 'Buscar DNI, Nombre, N° Caso o N° Expediente...';
       }
 
-      // Lazy loading de diccionarios
       const cacheATC    = Memoria.leer('diccionariosATC');
       const cacheGlobal = Memoria.leer('diccionariosGlobales');
 
@@ -48,24 +40,21 @@
         this.cargarDatosBandeja();
       } else {
         this._mostrarSpinnerBandeja('Preparando entorno de atención ciudadana...');
-        google.script.run
-          .withSuccessHandler(res => {
-            if (res && res.success) {
-              Memoria.guardar('diccionariosATC', res.data);
-              this.configurarFiltrosAvanzados(modulo, res.data, cacheGlobal);
-              this.cargarDatosBandeja();
-            } else {
-              Portal_Core.mostrarToast('error', 'Fallo de Sincronización', res.message);
-            }
-          })
-          .withFailureHandler(err => Portal_Core.mostrarToast('error', 'Fallo de Red', err.message))
-          .obtenerDiccionariosATCBackend();
+        try {
+          const res = await Portal_Core.ejecutarBackend('obtenerDiccionariosATCBackend');
+          if (res && res.success) {
+            Memoria.guardar('diccionariosATC', res.data);
+            this.configurarFiltrosAvanzados(modulo, res.data, cacheGlobal);
+            this.cargarDatosBandeja();
+          } else {
+            Portal_Core.mostrarToast('error', 'Fallo de Sincronización', res.message);
+          }
+        } catch (err) {
+          Portal_Core.mostrarToast('error', 'Fallo de Red', err.message);
+        }
       }
     },
 
-    // =========================================================
-    // CONFIGURACIÓN DE FILTROS AVANZADOS
-    // =========================================================
     configurarFiltrosAvanzados: function(modulo, cacheATC, cacheGlobal) {
       ['filtro-estado','filtro-categoria','filtro-desde',
        'filtro-hasta','filtro-agente','filtro-area'].forEach(id => {
@@ -100,7 +89,6 @@
         '<option value="">Todos los Estados</option>' +
         estados.map(e => `<option value="${e}">${e}</option>`).join('');
 
-      // Visibilidad contextual de filtros
       const boxAgente = document.getElementById('box-filtro-agente');
       const boxArea   = document.getElementById('box-filtro-area');
       if (boxAgente) boxAgente.classList.toggle('hidden', modulo === 'MisCasos');
@@ -143,64 +131,53 @@
       };
     },
 
-    // =========================================================
-    // CARGA DE DATOS
-    // =========================================================
-    cargarDatosBandeja: function() {
+    cargarDatosBandeja: async function() {
       const contexto  = this._contextoFiltro();
       const filtrosAv = this.obtenerPaqueteFiltros();
 
       this._mostrarSpinnerBandeja('Aplicando filtros y buscando...');
 
-      google.script.run
-        .withSuccessHandler(res => {
-          if (!res.success) {
-            this._mostrarErrorBandeja(res.error || res.message);
-            return;
-          }
-          this.estadoBandeja.datos           = res.casos;
-          this.estadoBandeja.totalRegistros  = res.totalRegistros;
-          this.estadoBandeja.itemsPorPagina  = res.itemsPorPagina;
-          this.renderizarBandeja(res.casos);
-        })
-        .withFailureHandler(err => this._mostrarErrorBandeja(err.message))
-        .obtenerCasosPaginados(
+      try {
+        const res = await Portal_Core.ejecutarBackend(
+          'obtenerCasosPaginados',
           contexto,
-          window.USUARIO_ACTUAL.idAgente,
-          window.USUARIO_ACTUAL.idArea,
           this.estadoBandeja.pagina,
           this.estadoBandeja.terminoBusqueda,
           filtrosAv
         );
+        if (!res.success) {
+          this._mostrarErrorBandeja(res.error || res.message);
+          return;
+        }
+        this.estadoBandeja.datos           = res.casos;
+        this.estadoBandeja.totalRegistros  = res.totalRegistros;
+        this.estadoBandeja.itemsPorPagina  = res.itemsPorPagina;
+        this.renderizarBandeja(res.casos);
+      } catch (err) {
+        this._mostrarErrorBandeja(err.message);
+      }
     },
 
-    // Refresco silencioso: no muestra spinner, solo actualiza si
-    // el usuario está en página 1 sin búsqueda activa.
-    cargarDatosSilencioso: function() {
+    cargarDatosSilencioso: async function() {
       const contexto  = this._contextoFiltro();
       const filtrosAv = this.obtenerPaqueteFiltros();
 
-      google.script.run
-        .withSuccessHandler(res => {
-          const sinFiltro = this.estadoBandeja.terminoBusqueda === '' && this.estadoBandeja.pagina === 1;
-          if (res.success && sinFiltro) {
-            this.estadoBandeja.datos          = res.casos;
-            this.estadoBandeja.totalRegistros = res.totalRegistros;
-            this.renderizarBandeja(res.casos);
-          }
-        })
-        .obtenerCasosPaginados(
-          contexto,
-          window.USUARIO_ACTUAL.idAgente,
-          window.USUARIO_ACTUAL.idArea,
-          1, '', filtrosAv
+      try {
+        const res = await Portal_Core.ejecutarBackend(
+          'obtenerCasosPaginados',
+          contexto, 1, '', filtrosAv
         );
+        const sinFiltro = this.estadoBandeja.terminoBusqueda === '' && this.estadoBandeja.pagina === 1;
+        if (res.success && sinFiltro) {
+          this.estadoBandeja.datos          = res.casos;
+          this.estadoBandeja.totalRegistros = res.totalRegistros;
+          this.renderizarBandeja(res.casos);
+        }
+      } catch (e) {
+        console.warn('Fallo refresco silencioso', e);
+      }
     },
 
-    // =========================================================
-    // RENDERIZADO DE LA GRILLA
-    // =========================================================
-    
     renderizarBandeja: function(lista) {
       const box = document.getElementById('dashboard-content');
       if (!box) return;
@@ -271,14 +248,11 @@
                onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='var(--shadow-md)'; this.style.borderColor='var(--border-hard)'"
                onmouseout="this.style.transform=''; this.style.boxShadow='var(--shadow-sm)'; this.style.borderColor='var(--border-soft)'">
 
-            <!-- Barra lateral de estado -->
             <div style="width:5px; flex-shrink:0; background:${cE};"></div>
 
-            <!-- Contenido -->
             <div style="flex:1; padding:14px 18px; display:grid;
                         grid-template-columns:1fr auto; gap:8px 16px; align-items:start;">
 
-              <!-- CELDA SUPERIOR IZQUIERDA: Ciudadano -->
               <div style="display:flex; align-items:center; gap:10px;">
                 <div style="width:36px; height:36px; border-radius:8px; flex-shrink:0;
                             background:${esOrg ? 'var(--warning-bg)' : 'var(--primary-light)'};
@@ -298,7 +272,6 @@
                 </div>
               </div>
 
-              <!-- CELDA SUPERIOR DERECHA: Badge de estado -->
               <div style="display:flex; align-items:center; gap:5px; justify-self:end;
                           padding:5px 12px; border-radius:20px; font-size:0.72rem;
                           font-weight:700; text-transform:uppercase; letter-spacing:0.3px;
@@ -307,7 +280,6 @@
                 ${c.estado}
               </div>
 
-              <!-- CELDA INFERIOR: Metadatos distribuidos -->
               <div style="grid-column:1 / -1; display:flex; align-items:center; gap:10px;
                           flex-wrap:wrap; padding-left:46px;">
 
@@ -346,27 +318,19 @@
           </div>`;
       }).join('');
 
-      this.renderizarPaginacion();
+      // La paginación la mantendremos si la tienes implementada, en este snippet asumo que la dibujas aparte
+      if (this.renderizarPaginacion) this.renderizarPaginacion();
     },
 
-    // =========================================================
-    // REFRESCO DE NOTIFICACIONES DESDE LA BANDEJA
-    // =========================================================
-    checkNotificaciones: function() {
-      if (!window.USUARIO_ACTUAL) return;
-      google.script.run
-        .withSuccessHandler(res => {
-          if (res.success) Portal_Core.iniciarNotificaciones(res.lista, res.total);
-        })
-        .obtenerNotificacionesBackend(
-          window.USUARIO_ACTUAL.idAgente,
-          window.USUARIO_ACTUAL.idArea
-        );
+    checkNotificaciones: async function() {
+      try {
+        const res = await Portal_Core.ejecutarBackend('obtenerNotificacionesBackend');
+        if (res.success) Portal_Core.iniciarNotificaciones(res.lista, res.total);
+      } catch (err) {
+        console.warn('No se pudieron recuperar las notificaciones.', err);
+      }
     },
 
-    // =========================================================
-    // PRIVADOS
-    // =========================================================
     _contextoFiltro: function() {
       const m = this.estadoBandeja.modulo;
       return m === 'MisCasos' ? 'MIO' : m === 'MiArea' ? 'AREA' : 'TODOS';

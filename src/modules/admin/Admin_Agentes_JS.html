@@ -11,21 +11,29 @@
         cargarModulo('PortalHome');
         return;
       }
-      // Mover modal al body para bloqueo global correcto
+      
       const m = document.getElementById('modal-agente');
       if (m && m.parentElement !== document.body) document.body.appendChild(m);
 
       this._cargarDiccionarios(() => this.cargar());
     },
 
-    _cargarDiccionarios: function(callback) {
+    _cargarDiccionarios: async function(callback) {
       if (this._cache) { this._poblarFiltros(); if (callback) callback(); return; }
-      google.script.run
-        .withSuccessHandler(res => {
-          if (res.success) { this._cache = res.data; this._poblarFiltros(); }
-          if (callback) callback();
-        })
-        .obtenerDiccionariosAgentes();
+      
+      try {
+        const res = await Portal_Core.ejecutarBackend('obtenerDiccionariosAgentes');
+        if (res.success) { 
+          this._cache = res.data; 
+          this._poblarFiltros(); 
+        } else {
+          Portal_Core.mostrarToast('error', 'Error', res.message);
+        }
+        if (callback) callback();
+      } catch (err) {
+        Portal_Core.mostrarToast('error', 'Error de Red', err.message);
+        if (callback) callback();
+      }
     },
 
     _poblarFiltros: function() {
@@ -43,7 +51,7 @@
         (items || []).map(i => `<option value="${i.id}">${i.nombre}</option>`).join('');
     },
 
-    cargar: function() {
+    cargar: async function() {
       document.getElementById('adm-ag-loader').classList.remove('hidden');
       document.getElementById('adm-ag-body').innerHTML = '';
       const filtros = {
@@ -52,18 +60,16 @@
       };
       if (filtros.estado === '') delete filtros.estado;
 
-      google.script.run
-        .withSuccessHandler(res => {
-          document.getElementById('adm-ag-loader').classList.add('hidden');
-          if (!res.success) return Portal_Core.mostrarToast('error', 'Error', res.message);
-          this._todos = res.data || [];
-          this._filtrarLocal();
-        })
-        .withFailureHandler(err => {
-          document.getElementById('adm-ag-loader').classList.add('hidden');
-          Portal_Core.mostrarToast('error', 'Error de Red', err.message);
-        })
-        .listarAgentesBackend(filtros);
+      try {
+        const res = await Portal_Core.ejecutarBackend('listarAgentesBackend', filtros);
+        document.getElementById('adm-ag-loader').classList.add('hidden');
+        if (!res.success) return Portal_Core.mostrarToast('error', 'Error', res.message);
+        this._todos = res.data || [];
+        this._filtrarLocal();
+      } catch (err) {
+        document.getElementById('adm-ag-loader').classList.add('hidden');
+        Portal_Core.mostrarToast('error', 'Error de Red', err.message);
+      }
     },
 
     _filtrarLocal: function() {
@@ -141,14 +147,11 @@
       const cb  = document.getElementById('ag-discapacidad');
       const det = document.getElementById('ag-disc-detalle');
       if (!cb || !det) return;
-      // Si se llegó desde el onclick del row, el checkbox ya alternó; si llegó desde el input, usamos su estado
       det.classList.toggle('hidden', !cb.checked);
     },
 
     abrirModal: function() {
-      // Asegurar que el modal esté en el body para bloquear toda la UI
-      const m = document.getElementById('modal-agente');
-      if (m && m.parentElement !== document.body) document.body.appendChild(m);
+      Portal_Core.abrirModal('modal-agente');
 
       document.getElementById('ag-id').value = '';
       document.getElementById('modal-ag-titulo').innerHTML =
@@ -165,7 +168,6 @@
 
       this._tab(0);
       this._poblarSelectsModal();
-      document.getElementById('modal-agente').classList.remove('hidden');
     },
 
     _poblarSelectsModal: function() {
@@ -179,52 +181,50 @@
       this._poblarSelect('ag-cargo',         this._cache.cargos,          'Seleccione...');
     },
 
-    editar: function(id) {
-      // Asegurar modal en body
-      const m = document.getElementById('modal-agente');
-      if (m && m.parentElement !== document.body) document.body.appendChild(m);
-
+    editar: async function(id) {
+      Portal_Core.abrirModal('modal-agente');
       this._poblarSelectsModal();
       this._tab(0);
       document.getElementById('modal-ag-titulo').innerHTML =
         '<i class="fas fa-pencil-alt" style="color:var(--primary)"></i> Editar Agente';
 
-      google.script.run
-        .withSuccessHandler(res => {
-          if (!res.success) return Portal_Core.mostrarToast('error', 'Error', res.message);
-          const a = res.data;
-          document.getElementById('ag-id').value             = a.id;
-          document.getElementById('ag-apellido').value       = a.apellido || '';
-          document.getElementById('ag-nombre').value         = a.nombre || '';
-          document.getElementById('ag-dni').value            = a.dni || '';
-          document.getElementById('ag-cuil').value           = a.cuil || '';
-          document.getElementById('ag-fecha-nac').value      = a.fecha_nacimiento || '';
-          document.getElementById('ag-genero').value         = a.genero_id || '';
-          document.getElementById('ag-estado-civil').value   = a.estado_civil_id || '';
-          document.getElementById('ag-hijos').value          = a.hijos_a_cargo || 0;
-          document.getElementById('ag-telefono').value       = a.telefono || '';
-          document.getElementById('ag-email').value          = a.email || '';
-          document.getElementById('ag-domicilio').value      = a.domicilio || '';
-          document.getElementById('ag-nivel-estudio').value  = a.nivel_estudio_id || '';
-          document.getElementById('ag-titulo').value         = a.titulo_obtenido || '';
-          document.getElementById('ag-delegacion').value     = a.delegacion_id || '';
-          document.getElementById('ag-area').value           = a.area_id || '';
-          document.getElementById('ag-cargo').value          = a.cargo_id || '';
-          document.getElementById('ag-modalidad').value      = a.modalidad_id || '';
-          document.getElementById('ag-fecha-inicio').value   = a.fecha_inicio_sp || '';
-          document.getElementById('ag-fecha-venc').value     = a.fecha_vencimiento_contrato || '';
-          document.getElementById('ag-hora-ingreso').value   = a.hora_ingreso || '';
-          document.getElementById('ag-horas-laborales').value = a.horas_laborales || '';
-          document.getElementById('ag-discapacidad').checked = a.discapacidad || false;
-          document.getElementById('ag-discapacidad-nombre').value = a.discapacidad_nombre || '';
-          document.getElementById('ag-disc-detalle').classList.toggle('hidden', !a.discapacidad);
-
-          document.getElementById('modal-agente').classList.remove('hidden');
-        })
-        .obtenerAgenteBackend(id);
+      try {
+        const res = await Portal_Core.ejecutarBackend('obtenerAgenteBackend', id);
+        if (!res.success) return Portal_Core.mostrarToast('error', 'Error', res.message);
+        
+        const a = res.data;
+        document.getElementById('ag-id').value             = a.id;
+        document.getElementById('ag-apellido').value       = a.apellido || '';
+        document.getElementById('ag-nombre').value         = a.nombre || '';
+        document.getElementById('ag-dni').value            = a.dni || '';
+        document.getElementById('ag-cuil').value           = a.cuil || '';
+        document.getElementById('ag-fecha-nac').value      = a.fecha_nacimiento || '';
+        document.getElementById('ag-genero').value         = a.genero_id || '';
+        document.getElementById('ag-estado-civil').value   = a.estado_civil_id || '';
+        document.getElementById('ag-hijos').value          = a.hijos_a_cargo || 0;
+        document.getElementById('ag-telefono').value       = a.telefono || '';
+        document.getElementById('ag-email').value          = a.email || '';
+        document.getElementById('ag-domicilio').value      = a.domicilio || '';
+        document.getElementById('ag-nivel-estudio').value  = a.nivel_estudio_id || '';
+        document.getElementById('ag-titulo').value         = a.titulo_obtenido || '';
+        document.getElementById('ag-delegacion').value     = a.delegacion_id || '';
+        document.getElementById('ag-area').value           = a.area_id || '';
+        document.getElementById('ag-cargo').value          = a.cargo_id || '';
+        document.getElementById('ag-modalidad').value      = a.modalidad_id || '';
+        document.getElementById('ag-fecha-inicio').value   = a.fecha_inicio_sp || '';
+        document.getElementById('ag-fecha-venc').value     = a.fecha_vencimiento_contrato || '';
+        document.getElementById('ag-hora-ingreso').value   = a.hora_ingreso || '';
+        document.getElementById('ag-horas-laborales').value = a.horas_laborales || '';
+        document.getElementById('ag-discapacidad').checked = a.discapacidad || false;
+        document.getElementById('ag-discapacidad-nombre').value = a.discapacidad_nombre || '';
+        document.getElementById('ag-disc-detalle').classList.toggle('hidden', !a.discapacidad);
+      } catch (err) {
+        Portal_Core.cerrarModal('modal-agente');
+        Portal_Core.mostrarToast('error', 'Error de Red', err.message);
+      }
     },
 
-    guardar: function() {
+    guardar: async function() {
       const apellido = document.getElementById('ag-apellido').value.trim();
       const nombre   = document.getElementById('ag-nombre').value.trim();
       const dni      = document.getElementById('ag-dni').value.trim();
@@ -263,37 +263,40 @@
       btn.disabled = true;
       btn.innerHTML = '<i class="fas fa-circle-notch spinner"></i> Guardando...';
 
-      google.script.run
-        .withSuccessHandler(res => {
-          btn.disabled = false;
-          btn.innerHTML = '<i class="fas fa-save" style="margin-right:5px;"></i> Guardar';
-          if (res.success) {
-            Portal_Core.cerrarModal('modal-agente');
-            Portal_Core.mostrarToast('success', 'Guardado', res.message);
-            this.cargar();
-          } else {
-            Portal_Core.mostrarToast('error', 'Error', res.message);
-          }
-        })
-        .withFailureHandler(err => {
-          btn.disabled = false;
-          btn.innerHTML = '<i class="fas fa-save" style="margin-right:5px;"></i> Guardar';
-          Portal_Core.mostrarToast('error', 'Error de Red', err.message);
-        })
-        .guardarAgenteBackend(payload);
+      try {
+        const res = await Portal_Core.ejecutarBackend('guardarAgenteBackend', payload);
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-save" style="margin-right:5px;"></i> Guardar';
+        if (res.success) {
+          Portal_Core.cerrarModal('modal-agente');
+          Portal_Core.mostrarToast('success', 'Guardado', res.message);
+          this.cargar();
+        } else {
+          Portal_Core.mostrarToast('error', 'Error', res.message);
+        }
+      } catch (err) {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-save" style="margin-right:5px;"></i> Guardar';
+        Portal_Core.mostrarToast('error', 'Error de Red', err.message);
+      }
     },
 
     toggleEstado: function(id, nuevoEstado, nombre) {
       Portal_Core.mostrarConfirmacion(
         `¿${nuevoEstado ? 'Activar' : 'Desactivar'} agente?`,
         `Se va a ${nuevoEstado ? 'activar' : 'desactivar'} a ${nombre}.`,
-        () => {
-          google.script.run
-            .withSuccessHandler(res => {
-              if (res.success) { Portal_Core.mostrarToast('success', 'Actualizado', res.message); this.cargar(); }
-              else Portal_Core.mostrarToast('error', 'Error', res.message);
-            })
-            .toggleEstadoAgenteBackend(id, nuevoEstado);
+        async () => {
+          try {
+            const res = await Portal_Core.ejecutarBackend('toggleEstadoAgenteBackend', id, nuevoEstado);
+            if (res.success) { 
+              Portal_Core.mostrarToast('success', 'Actualizado', res.message); 
+              this.cargar(); 
+            } else {
+              Portal_Core.mostrarToast('error', 'Error', res.message);
+            }
+          } catch (err) {
+            Portal_Core.mostrarToast('error', 'Error de Red', err.message);
+          }
         }
       );
     }

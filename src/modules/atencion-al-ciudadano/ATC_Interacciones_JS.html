@@ -18,6 +18,7 @@
     // =========================================================
     // ABRIR MODAL (crear o editar)
     // =========================================================
+    
     abrirModalInteraccion: function(dataEncoded = null) {
       const modalText  = document.getElementById('modal-int-texto');
       const modalId    = document.getElementById('modal-int-id');
@@ -28,24 +29,27 @@
         const data       = JSON.parse(decodeURIComponent(dataEncoded));
         modalId.value    = data.interaccion_id;
         modalText.value  = data.observacion;
-        modalTitle.innerText         = 'Editar Interacción';
-        btnGuardar.innerHTML         = '<i class="fas fa-save"></i> Actualizar';
+        modalTitle.innerText = 'Editar Interacción';
+        btnGuardar.innerHTML = '<i class="fas fa-save"></i> Actualizar';
       } else {
         modalId.value    = '';
         modalText.value  = '';
-        modalTitle.innerText         = 'Nueva Interacción';
-        btnGuardar.innerHTML         = '<i class="fas fa-save"></i> Guardar';
+        modalTitle.innerText = 'Nueva Interacción';
+        btnGuardar.innerHTML = '<i class="fas fa-save"></i> Guardar';
       }
 
       btnGuardar.disabled = false;
-      document.getElementById('modal-interaccion').classList.remove('hidden');
+      
+      // SOLUCIÓN: Usamos el manejador centralizado del Core para bloquear la pantalla
+      Portal_Core.abrirModal('modal-interaccion');
+      
       setTimeout(() => modalText.focus(), 100);
     },
 
     // =========================================================
     // GUARDAR / ACTUALIZAR
     // =========================================================
-    guardarInteraccion: function() {
+    guardarInteraccion: async function() {
       const texto       = document.getElementById('modal-int-texto').value.trim();
       const idExistente = document.getElementById('modal-int-id').value;
 
@@ -57,36 +61,30 @@
 
       const payload = {
         recepcion_id:      this.estadoDetalle.idCaso,
-        agente_id:         window.USUARIO_ACTUAL.idAgente,
         es_mensaje_sistema: false,
         observacion:       texto
       };
       if (idExistente) payload.id = idExistente;
 
-      google.script.run
-        .withSuccessHandler(res => {
-          if (res.success) {
-            Portal_Core.mostrarToast(
-              'success', 'Éxito',
-              idExistente ? 'Interacción actualizada.' : 'Interacción registrada.'
-            );
-            Portal_Core.cerrarModal('modal-interaccion');
-            this.checkNotificaciones();
-            this.iniciarDetalle(this.estadoDetalle.idCaso);
-          } else {
-            Portal_Core.mostrarToast('error', 'Error SQL', res.message);
-            btn.disabled  = false;
-            btn.innerHTML = idExistente
-              ? '<i class="fas fa-save"></i> Actualizar'
-              : '<i class="fas fa-save"></i> Guardar';
-          }
-        })
-        .withFailureHandler(err => {
-          Portal_Core.mostrarToast('error', 'Fallo de Red', err.message);
-          btn.disabled  = false;
-          btn.innerHTML = '<i class="fas fa-save"></i> Guardar';
-        })
-        .guardarInteraccionBackend(payload);
+      try {
+        const res = await Portal_Core.ejecutarBackend('guardarInteraccionBackend', payload);
+
+        if (res.success) {
+          Portal_Core.mostrarToast('success', 'Éxito', idExistente ? 'Interacción actualizada.' : 'Interacción registrada.');
+          Portal_Core.cerrarModal('modal-interaccion');
+          this.checkNotificaciones();
+          this.iniciarDetalle(this.estadoDetalle.idCaso);
+        } else {
+          Portal_Core.mostrarToast('error', 'Error SQL', res.message);
+          btn.disabled = false;
+          btn.innerHTML = idExistente ? '<i class="fas fa-save"></i> Actualizar' : '<i class="fas fa-save"></i> Guardar';
+        }
+
+      } catch (err) {
+        Portal_Core.mostrarToast('error', 'Fallo de Red', err.message);
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-save"></i> Guardar';
+      }
     },
 
     // =========================================================

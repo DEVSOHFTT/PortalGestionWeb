@@ -19,18 +19,8 @@
 
   Object.assign(window.ATC_App, {
 
-    // =========================================================
-    // INICIALIZACIÓN DEL DETALLE
-    // =========================================================
-    iniciarDetalle: function(id) {
+    iniciarDetalle: async function(id) {
       if (this.temporizadores.bandeja) clearInterval(this.temporizadores.bandeja);
-
-      // Mover todos los modales al body para evitar problemas de z-index
-      ['modal-interaccion','modal-actuacion','modal-derivar','modal-expediente']
-        .forEach(mId => {
-          const el = document.getElementById(mId);
-          if (el && el.parentElement !== document.body) document.body.appendChild(el);
-        });
 
       this.estadoDetalle.idCaso      = id;
       this.estadoDetalle.idCiudadano = null;
@@ -41,22 +31,20 @@
 
       this._resetPanelesDetalle();
 
-      google.script.run
-        .withSuccessHandler(res => {
-          if (!res.success) {
-            Portal_Core.mostrarToast('error', 'Error del Sistema', res.message);
-            this.volverABandeja();
-            return;
-          }
-          this.estadoDetalle.categoriaActual = res.gestion.categoria;
-          this.estadoDetalle.idEstado        = parseInt(res.gestion.idEstado);
-          this._pintarFichaDetalle(res);
-        })
-        .withFailureHandler(err => {
-          Portal_Core.mostrarToast('error', 'Fallo Crítico', err.message);
+      try {
+        const res = await Portal_Core.ejecutarBackend('obtenerPaqueteCompletoCaso', id);
+        if (!res.success) {
+          Portal_Core.mostrarToast('error', 'Error del Sistema', res.message);
           this.volverABandeja();
-        })
-        .obtenerPaqueteCompletoCaso(id);
+          return;
+        }
+        this.estadoDetalle.categoriaActual = res.gestion.categoria;
+        this.estadoDetalle.idEstado        = parseInt(res.gestion.idEstado);
+        this._pintarFichaDetalle(res);
+      } catch (err) {
+        Portal_Core.mostrarToast('error', 'Fallo Crítico', err.message);
+        this.volverABandeja();
+      }
     },
 
     volverABandeja: function() {
@@ -67,27 +55,20 @@
     abrirFichaCiudadano: function() {
       const idCiu = this.estadoDetalle.idCiudadano;
       if (!idCiu) {
-        Portal_Core.mostrarToast('warning', 'Sin Ciudadano',
-          'No se pudo identificar al ciudadano vinculado a este caso.');
+        Portal_Core.mostrarToast('warning', 'Sin Ciudadano', 'No se pudo identificar al ciudadano vinculado a este caso.');
         return;
       }
       this.estadoFicha.idCasoOrigen = this.estadoDetalle.idCaso;
       cargarModulo('FichaCiudadano', idCiu);
     },
 
-    // =========================================================
-    // PINTADO DE LA FICHA
-    // =========================================================
     _pintarFichaDetalle: function(res) {
       const { gestion, ciudadano, historialUnificado } = res;
       this.estadoDetalle.idCiudadano = ciudadano.id;
 
-      // ── ID y estado ──
       document.getElementById('vc-id').innerText = gestion.id.toUpperCase();
       this._pintarBadgeEstado(gestion.estado);
 
-      // ── Datos del caso ──
-      // CORRECCIÓN: el backend devuelve gestion.fecha (no fechaInicio)
       const camposCaso = {
         'vc-fecha':        gestion.fecha,
         'vc-canal':        gestion.canal,
@@ -103,35 +84,22 @@
         if (el) el.innerText = val || 'S/D';
       });
 
-      // ── Expediente ──
       const elExp = document.getElementById('vc-expediente');
       if (elExp) {
         const tieneExp = gestion.expediente && gestion.expediente !== 'No posee';
         elExp.innerHTML = tieneExp
-          ? `<span class="exp-badge-solid">
-               <i class="fas fa-file-contract" style="margin-right:4px;"></i>
-               ${gestion.expediente}
-             </span>
-             <button class="btn btn-outline"
-                     style="padding:2px 8px; font-size:0.7rem; margin-left:6px;
-                            color:var(--danger); border-color:var(--danger);"
-                     onclick="ATC_App.desvincularExpediente()" title="Desvincular">
+          ? `<span class="exp-badge-solid"><i class="fas fa-file-contract" style="margin-right:4px;"></i>${gestion.expediente}</span>
+             <button class="btn btn-outline" style="padding:2px 8px; font-size:0.7rem; margin-left:6px; color:var(--danger); border-color:var(--danger);" onclick="ATC_App.desvincularExpediente()" title="Desvincular">
                <i class="fas fa-unlink"></i>
              </button>`
-          : `<button class="btn btn-outline"
-                     style="padding:4px 10px; font-size:0.75rem;"
-                     onclick="ATC_App.abrirModalExpediente()">
+          : `<button class="btn btn-outline" style="padding:4px 10px; font-size:0.75rem;" onclick="ATC_App.abrirModalExpediente()">
                <i class="fas fa-link" style="margin-right:4px;"></i> Vincular
              </button>`;
       }
 
-      // ── Ciudadano: nombre y avatar ──
-      // CORRECCIÓN: IDs de la vista usan 'vc-ciu-*', no 'vc-ciudadano-*'
-      const esOrg = String(ciudadano.tipo_entidad_id) === '2' ||
-                    (ciudadano.dni && ciudadano.dni.length > 8);
+      const esOrg = String(ciudadano.tipo_entidad_id) === '2' || (ciudadano.dni && ciudadano.dni.length > 8);
       const nombreLimpio = (ciudadano.apellido && ciudadano.apellido !== '-')
-        ? `${ciudadano.apellido}, ${ciudadano.nombre}`.toUpperCase()
-        : (ciudadano.nombre || 'S/D').toUpperCase();
+        ? `${ciudadano.apellido}, ${ciudadano.nombre}`.toUpperCase() : (ciudadano.nombre || 'S/D').toUpperCase();
 
       const avatar = document.getElementById('vc-ciu-avatar');
       if (avatar) {
@@ -142,27 +110,16 @@
       const elNombre = document.getElementById('vc-ciu-nombre');
       if (elNombre) elNombre.innerText = nombreLimpio;
 
-      // Pills de identificación
       const pills = {
-        'vc-ciu-dni':   ciudadano.dni
-          ? `<i class="fas fa-id-card"></i> DNI: ${ciudadano.dni}`
-          : `<i class="fas fa-id-card"></i> Sin DNI`,
-        'vc-ciu-cuil':  ciudadano.cuil
-          ? `<i class="fas fa-hashtag"></i> CUIT/L: ${ciudadano.cuil}`
-          : `<i class="fas fa-hashtag"></i> Sin CUIT/L`,
-        'vc-ciu-tel':   ciudadano.telefono
-          ? `<i class="fas fa-phone-alt"></i> ${ciudadano.telefono}`
-          : `<i class="fas fa-phone-alt"></i> Sin Teléfono`,
-        'vc-ciu-email': ciudadano.email
-          ? `<i class="fas fa-envelope"></i> ${ciudadano.email}`
-          : `<i class="fas fa-envelope"></i> Sin Email`
+        'vc-ciu-dni':   ciudadano.dni ? `<i class="fas fa-id-card"></i> DNI: ${ciudadano.dni}` : `<i class="fas fa-id-card"></i> Sin DNI`,
+        'vc-ciu-cuil':  ciudadano.cuil ? `<i class="fas fa-hashtag"></i> CUIT/L: ${ciudadano.cuil}` : `<i class="fas fa-hashtag"></i> Sin CUIT/L`,
+        'vc-ciu-tel':   ciudadano.telefono ? `<i class="fas fa-phone-alt"></i> ${ciudadano.telefono}` : `<i class="fas fa-phone-alt"></i> Sin Teléfono`,
+        'vc-ciu-email': ciudadano.email ? `<i class="fas fa-envelope"></i> ${ciudadano.email}` : `<i class="fas fa-envelope"></i> Sin Email`
       };
       Object.entries(pills).forEach(([id, html]) => {
-        const el = document.getElementById(id);
-        if (el) el.innerHTML = html;
+        const el = document.getElementById(id); if (el) el.innerHTML = html;
       });
 
-      // Panel extra del ciudadano
       const loc = [];
       if (ciudadano.calle) loc.push(`${ciudadano.calle} ${ciudadano.altura || ''}`.trim());
       if (ciudadano.piso || ciudadano.dpto) loc.push(`Piso ${ciudadano.piso || '-'} Dpto ${ciudadano.dpto || '-'}`);
@@ -183,10 +140,7 @@
       const elGen = document.getElementById('vc-ciu-genero');
       if (elGen) elGen.innerText = GENEROS[String(ciudadano.genero_id)] || 'N/D';
 
-      // ── Botones contextuales según estado y pertenencia ──
       this._configurarBotonesDetalle(gestion);
-
-      // ── Timeline ──
       this.dibujarTimelineUnificado(historialUnificado);
 
       document.getElementById('loader-detalle').classList.add('hidden');
@@ -218,10 +172,9 @@
       const boxBtnHistorial  = document.getElementById('box-btn-historial');
       if (!boxTop) return;
 
-      // CORRECCIÓN: el backend devuelve agenteRespId y areaDestinoId (no idAgenteResp/idArea)
       const esMio    = String(gestion.agenteRespId)   === String(window.USUARIO_ACTUAL.idAgente);
       const esMiArea = String(gestion.areaDestinoId)  === String(window.USUARIO_ACTUAL.idArea);
-      const bloqueado = [2, 3].includes(this.estadoDetalle.idEstado); // FINALIZADO / CERRADO
+      const bloqueado = [2, 3].includes(this.estadoDetalle.idEstado);
 
       if (bloqueado) {
         boxTop.innerHTML = `
@@ -287,58 +240,38 @@
       }
     },
 
-    // =========================================================
-    // ACCIONES SOBRE EL ESTADO DEL CASO
-    // =========================================================
     ejecutarAccionDetalle: function(accion) {
-      const titulos = {
-        tomar:     '¿Tomar el Caso?',
-        reabrir:   '¿Reabrir el Caso?',
-        finalizar: '¿Finalizar el Caso?'
-      };
+      const titulos = { tomar: '¿Tomar el Caso?', reabrir: '¿Reabrir el Caso?', finalizar: '¿Finalizar el Caso?' };
       Portal_Core.mostrarConfirmacion(
         titulos[accion] || '¿Confirmar Acción?',
         '¿Confirma que desea realizar esta acción sobre el caso?',
-        () => {
+        async () => {
           const boxAcciones = document.getElementById('contenedor-acciones');
-          if (boxAcciones) boxAcciones.innerHTML =
-            `<span style="color:var(--primary); font-weight:600;">
-               <i class="fas fa-circle-notch spinner"></i> Ejecutando...
-             </span>`;
+          if (boxAcciones) boxAcciones.innerHTML = `<span style="color:var(--primary); font-weight:600;"><i class="fas fa-circle-notch spinner"></i> Ejecutando...</span>`;
 
-          google.script.run
-            .withSuccessHandler(res => {
-              if (!res.success) {
-                Portal_Core.mostrarToast('warning', 'Atención', res.message);
-              } else {
-                Portal_Core.mostrarToast('success', 'Éxito', 'Estado actualizado correctamente.');
-                this.checkNotificaciones();
-              }
-              this.iniciarDetalle(this.estadoDetalle.idCaso);
-            })
-            .withFailureHandler(err => Portal_Core.mostrarToast('error', 'Fallo de Red', err.message))
-            .procesarAccionBackend(
-              accion,
-              this.estadoDetalle.idCaso,
-              window.USUARIO_ACTUAL.idAgente,
-              window.USUARIO_ACTUAL.nombre
-            );
+          try {
+            const res = await Portal_Core.ejecutarBackend('procesarAccionBackend', accion, this.estadoDetalle.idCaso);
+            if (!res.success) {
+              Portal_Core.mostrarToast('warning', 'Atención', res.message);
+            } else {
+              Portal_Core.mostrarToast('success', 'Éxito', 'Estado actualizado correctamente.');
+              this.checkNotificaciones();
+            }
+            this.iniciarDetalle(this.estadoDetalle.idCaso);
+          } catch (err) {
+            Portal_Core.mostrarToast('error', 'Fallo de Red', err.message);
+          }
         }
       );
     },
 
-    // =========================================================
-    // TIMELINE UNIFICADO
-    // =========================================================
     dibujarTimelineUnificado: function(lista) {
       const box = document.getElementById('timeline-unificado');
       if (!box) return;
 
       if (!lista || lista.length === 0) {
         box.innerHTML = `
-          <div style="text-align:center; padding:40px; color:var(--text-muted);
-                      background:#f8fafc; border-radius:12px;
-                      border:1px dashed var(--border-soft);">
+          <div style="text-align:center; padding:40px; color:var(--text-muted); background:#f8fafc; border-radius:12px; border:1px dashed var(--border-soft);">
             <i class="fas fa-history fa-2x" style="opacity:0.3; margin-bottom:10px;"></i>
             <p style="font-weight:500;">No hay movimientos registrados.</p>
           </div>`;
@@ -357,60 +290,40 @@
         const cfg   = COLORES_TIPO[i.tipo] || COLORES_TIPO.SISTEMA;
         const color = cfg.color;
 
-        // Botón de edición solo para registros propios no bloqueados
         let btnEdit = '';
-        if (!bloqueado && i.tipo !== 'SISTEMA' &&
-            String(i.agenteId) === String(window.USUARIO_ACTUAL.idAgente)) {
+        if (!bloqueado && i.tipo !== 'SISTEMA' && String(i.agenteId) === String(window.USUARIO_ACTUAL.idAgente)) {
           const dataStr = encodeURIComponent(JSON.stringify(i.dataCruda));
-          const fn = i.tipo === 'ACTUACION'
-            ? `ATC_App.abrirModalActuacion('${dataStr}')`
-            : `ATC_App.abrirModalInteraccion('${dataStr}')`;
+          const fn = i.tipo === 'ACTUACION' ? `ATC_App.abrirModalActuacion('${dataStr}')` : `ATC_App.abrirModalInteraccion('${dataStr}')`;
           btnEdit = `
             <button onclick="${fn}"
-                    style="background:none; border:none; color:var(--text-muted);
-                           cursor:pointer; font-size:0.8rem; padding:4px 8px;
-                           border-radius:6px; transition:0.2s;"
-                    onmouseover="this.style.background='var(--bg-app)'"
-                    onmouseout="this.style.background='none'">
+                    style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:0.8rem; padding:4px 8px; border-radius:6px; transition:0.2s;"
+                    onmouseover="this.style.background='var(--bg-app)'" onmouseout="this.style.background='none'">
               <i class="fas fa-pencil-alt"></i>
             </button>`;
         }
 
-        const subtituloHtml = i.subtitulo
-          ? `<div style="font-size:0.8rem; color:var(--text-muted); margin-bottom:6px;
-                         font-weight:600;">${i.subtitulo}</div>`
-          : '';
+        const subtituloHtml = i.subtitulo ? `<div style="font-size:0.8rem; color:var(--text-muted); margin-bottom:6px; font-weight:600;">${i.subtitulo}</div>` : '';
 
         return `
           <div class="tl-item">
             <div class="tl-dot" style="background:${color};"></div>
             <div class="tl-content">
-              <div style="display:flex; justify-content:space-between; align-items:center;
-                          margin-bottom:6px;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
                 <div style="display:flex; align-items:center; gap:8px;">
                   <i class="fas ${cfg.icono}" style="color:${color}; font-size:0.85rem;"></i>
                   <span style="font-size:0.8rem; font-weight:700; color:var(--text-muted);">
-                    <i class="fas ${i.tipo === 'SISTEMA' ? 'fa-robot' : 'fa-user-tie'}"
-                       style="color:var(--text-muted); margin-right:4px;"></i>
+                    <i class="fas ${i.tipo === 'SISTEMA' ? 'fa-robot' : 'fa-user-tie'}" style="color:var(--text-muted); margin-right:4px;"></i>
                     ${i.agente}
                   </span>
                 </div>
                 <div style="display:flex; align-items:center; gap:6px;">
-                  <span style="color:var(--text-muted); font-weight:600; font-size:0.8rem;">
-                    ${i.fechaFormat} hs
-                  </span>
+                  <span style="color:var(--text-muted); font-weight:600; font-size:0.8rem;">${i.fechaFormat} hs</span>
                   ${btnEdit}
                 </div>
               </div>
-              <div style="margin-bottom:4px; font-weight:700; color:${color};
-                          font-size:1.05rem; letter-spacing:-0.01em;">
-                ${i.titulo}
-              </div>
+              <div style="margin-bottom:4px; font-weight:700; color:${color}; font-size:1.05rem; letter-spacing:-0.01em;">${i.titulo}</div>
               ${subtituloHtml}
-              <div style="font-size:0.95rem; line-height:1.6;
-                          color:${i.tipo === 'SISTEMA' ? 'var(--text-muted)' : 'var(--text-main)'};
-                          font-style:${i.tipo === 'SISTEMA' ? 'italic' : 'normal'};
-                          white-space:pre-wrap;">
+              <div style="font-size:0.95rem; line-height:1.6; color:${i.tipo === 'SISTEMA' ? 'var(--text-muted)' : 'var(--text-main)'}; font-style:${i.tipo === 'SISTEMA' ? 'italic' : 'normal'}; white-space:pre-wrap;">
                 ${i.texto}
               </div>
             </div>
@@ -418,9 +331,6 @@
       }).join('');
     },
 
-    // =========================================================
-    // PANEL COLLAPSIBLE
-    // =========================================================
     togglePanelDetalle: function(panelId, iconId) {
       const panel = document.getElementById(panelId);
       const icon  = document.getElementById(iconId);

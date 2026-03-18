@@ -12,52 +12,41 @@
    *                 Core_JS (mostrarToast, cerrarModal).
    * ========================================================================
    */
-
+  
   Object.assign(window.INV_App, {
 
-    // =========================================================
-    // INICIALIZACIÓN DE LA FICHA
-    // =========================================================
-    iniciarFicha: function(idActivo) {
+    iniciarFicha: async function(idActivo) {
       this.estadoActual.idQR = idActivo;
 
       document.getElementById('ruta-actual').innerText = 'Ficha del Activo';
       document.getElementById('content-inv-ficha').classList.add('hidden');
       document.getElementById('loader-inv-ficha').classList.remove('hidden');
 
-      // Detener scanner si estaba activo
       if (typeof INV_App.detenerCamaraEnVivo === 'function') INV_App.detenerCamaraEnVivo();
 
-      // Mover modal al body para evitar problemas de z-index
       const modal = document.getElementById('modal-inv-movimiento');
       if (modal && modal.parentElement !== document.body) document.body.appendChild(modal);
 
-      google.script.run
-        .withSuccessHandler(res => {
-          if (!res.success) {
-            Portal_Core.mostrarToast('error', 'Error', res.message);
-            this.volverAlScanOBandeja();
-            return;
-          }
-          this.estadoActual.activo = res.activo;
-          this.renderizarFicha(res.activo, res.historial);
-        })
-        .withFailureHandler(err => {
-          Portal_Core.mostrarToast('error', 'Error de Red', err.message);
+      try {
+        const res = await Portal_Core.ejecutarBackend('obtenerFichaActivoBackend', idActivo);
+        if (!res.success) {
+          Portal_Core.mostrarToast('error', 'Error', res.message);
           this.volverAlScanOBandeja();
-        })
-        .obtenerFichaActivoBackend(idActivo);
+          return;
+        }
+        this.estadoActual.activo = res.activo;
+        this.renderizarFicha(res.activo, res.historial);
+      } catch (err) {
+        Portal_Core.mostrarToast('error', 'Error de Red', err.message);
+        this.volverAlScanOBandeja();
+      }
     },
 
     volverAlScanOBandeja: function() {
       cargarModulo('InventarioBandeja');
     },
 
-    // =========================================================
-    // RENDERIZADO DE LA FICHA
-    // =========================================================
     renderizarFicha: function(activo, historial) {
-      // Cabecera
       document.getElementById('ficha-inv-id').innerText       = activo.activo_id.substring(0, 8).toUpperCase();
       document.getElementById('ficha-inv-titulo').innerText   = `${activo.marca || ''} ${activo.modelo || ''}`.trim() || activo.categoria;
       document.getElementById('ficha-inv-subtitulo').innerText = activo.categoria;
@@ -66,7 +55,6 @@
       badge.innerText           = activo.estado;
       badge.style.backgroundColor = activo.estado_color || 'var(--primary)';
 
-      // Ubicación y responsable
       document.getElementById('ficha-inv-ubicacion').innerHTML =
         activo.edificio
           ? `${activo.edificio}<br>
@@ -82,7 +70,6 @@
             ? `Área: ${activo.area_asignada}`
             : 'Sin Responsable';
 
-      // Campos condicionales: consumible vs. equipo fijo
       const boxSerie  = document.getElementById('box-inv-serie');
       const boxStock  = document.getElementById('box-inv-stock');
       const btnFijo   = document.getElementById('inv-botones-fijo');
@@ -112,9 +99,6 @@
       document.getElementById('content-inv-ficha').classList.remove('hidden');
     },
 
-    // =========================================================
-    // TIMELINE DE MOVIMIENTOS
-    // =========================================================
     dibujarTimeline: function(historial) {
       const box = document.getElementById('timeline-inv-movimientos');
       if (!box) return;
@@ -173,11 +157,7 @@
       }).join('');
     },
 
-    // =========================================================
-    // MODAL DE MOVIMIENTO
-    // =========================================================
     abrirModalMovimiento: function(accion) {
-      // Reset del modal
       document.getElementById('modal-inv-obs').value = '';
       document.getElementById('modal-inv-cantidad').value = 1;
 
@@ -216,10 +196,10 @@
         tipoHidden.value = '4';
       }
 
-      document.getElementById('modal-inv-movimiento').classList.remove('hidden');
+      Portal_Core.abrirModal('modal-inv-movimiento');
     },
 
-    guardarMovimiento: function() {
+    guardarMovimiento: async function() {
       const tipoId = document.getElementById('modal-inv-tipo').value;
       const obs    = document.getElementById('modal-inv-obs').value.trim();
 
@@ -247,24 +227,24 @@
       btn.disabled = true;
       btn.innerHTML = '<i class="fas fa-spinner spinner"></i> Registrando...';
 
-      google.script.run
-        .withSuccessHandler(res => {
-          btn.disabled = false;
-          btn.innerHTML = '<i class="fas fa-save"></i> Confirmar';
-          if (res.success) {
-            Portal_Core.cerrarModal('modal-inv-movimiento');
-            Portal_Core.mostrarToast('success', 'Guardado', 'Movimiento registrado correctamente.');
-            this.iniciarFicha(this.estadoActual.idQR);
-          } else {
-            Portal_Core.mostrarToast('error', 'Error DB', res.message);
-          }
-        })
-        .registrarMovimientoInventarioBackend(payload);
+      try {
+        const res = await Portal_Core.ejecutarBackend('registrarMovimientoInventarioBackend', payload);
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-save"></i> Confirmar';
+        if (res.success) {
+          Portal_Core.cerrarModal('modal-inv-movimiento');
+          Portal_Core.mostrarToast('success', 'Guardado', 'Movimiento registrado correctamente.');
+          this.iniciarFicha(this.estadoActual.idQR);
+        } else {
+          Portal_Core.mostrarToast('error', 'Error DB', res.message);
+        }
+      } catch (err) {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-save"></i> Confirmar';
+        Portal_Core.mostrarToast('error', 'Error de Red', err.message);
+      }
     },
 
-    // =========================================================
-    // PRIVADO: cargar selects del modal desde cache
-    // =========================================================
     _cargarSelectoresMovimiento: function(soloAgentes = false) {
       const cache = Memoria.leer('diccionariosINV');
       if (!cache) return;
@@ -282,10 +262,6 @@
       }
     },
 
-    // =========================================================
-    // ADJUNTAR FOTO DE EVIDENCIA
-    // Lee la imagen seleccionada, la convierte a base64 y la sube.
-    // =========================================================
     procesarFotoEvidencia: function(input) {
       if (!input.files || !input.files[0]) return;
 
@@ -302,9 +278,8 @@
       Portal_Core.mostrarToast('info', 'Subiendo foto...', 'Procesando imagen, un momento.', 10000, false);
 
       const reader = new FileReader();
-      reader.onload = (e) => {
+      reader.onload = async (e) => {
         const base64Full = e.target.result;
-        // Separar el prefijo "data:image/jpeg;base64," del dato puro
         const partes     = base64Full.split(',');
         const mimeType   = partes[0].split(':')[1].split(';')[0];
         const base64Data = partes[1];
@@ -317,22 +292,20 @@
           nombre_archivo: archivo.name
         };
 
-        google.script.run
-          .withSuccessHandler(res => {
-            input.value = '';
-            if (res.success) {
-              Portal_Core.mostrarToast('success', 'Foto adjuntada',
-                'La evidencia fotográfica fue guardada correctamente.');
-              this.iniciarFicha(this.estadoActual.idQR);
-            } else {
-              Portal_Core.mostrarToast('error', 'Error al subir', res.message);
-            }
-          })
-          .withFailureHandler(err => {
-            input.value = '';
-            Portal_Core.mostrarToast('error', 'Fallo de Red', err.message);
-          })
-          .subirFotoEvidenciaBackend(payload);
+        try {
+          const res = await Portal_Core.ejecutarBackend('subirFotoEvidenciaBackend', payload);
+          input.value = '';
+          if (res.success) {
+            Portal_Core.mostrarToast('success', 'Foto adjuntada',
+              'La evidencia fotográfica fue guardada correctamente.');
+            this.iniciarFicha(this.estadoActual.idQR);
+          } else {
+            Portal_Core.mostrarToast('error', 'Error al subir', res.message);
+          }
+        } catch (err) {
+          input.value = '';
+          Portal_Core.mostrarToast('error', 'Fallo de Red', err.message);
+        }
       };
 
       reader.readAsDataURL(archivo);
