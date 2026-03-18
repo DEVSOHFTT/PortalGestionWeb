@@ -1,6 +1,5 @@
 <script>
   window.AdminAgentes = {
-
     _cache: null,
     _todos: [],
 
@@ -11,28 +10,17 @@
         cargarModulo('PortalHome');
         return;
       }
-      
-      const m = document.getElementById('modal-agente');
-      if (m && m.parentElement !== document.body) document.body.appendChild(m);
-
       this._cargarDiccionarios(() => this.cargar());
     },
 
     _cargarDiccionarios: async function(callback) {
       if (this._cache) { this._poblarFiltros(); if (callback) callback(); return; }
-      
       try {
         const res = await Portal_Core.ejecutarBackend('obtenerDiccionariosAgentes');
-        if (res.success) { 
-          this._cache = res.data; 
-          this._poblarFiltros(); 
-        } else {
-          Portal_Core.mostrarToast('error', 'Error', res.message);
-        }
+        if (res.success) { this._cache = res.data; this._poblarFiltros(); }
         if (callback) callback();
       } catch (err) {
         Portal_Core.mostrarToast('error', 'Error de Red', err.message);
-        if (callback) callback();
       }
     },
 
@@ -40,15 +28,13 @@
       if (!this._cache) return;
       const sel = document.getElementById('adm-ag-filtro-area');
       if (sel && sel.options.length <= 1)
-        sel.innerHTML = '<option value="">Todas las áreas</option>' +
-          this._cache.areas.map(a => `<option value="${a.id}">${a.nombre}</option>`).join('');
+        sel.innerHTML = '<option value="">Todas las áreas</option>' + this._cache.areas.map(a => `<option value="${a.id}">${a.nombre}</option>`).join('');
     },
 
     _poblarSelect: function(id, items, placeholder) {
       const el = document.getElementById(id);
       if (!el) return;
-      el.innerHTML = `<option value="">${placeholder || 'Seleccione...'}</option>` +
-        (items || []).map(i => `<option value="${i.id}">${i.nombre}</option>`).join('');
+      el.innerHTML = `<option value="">${placeholder || 'Seleccione...'}</option>` + (items || []).map(i => `<option value="${i.id}">${i.nombre}</option>`).join('');
     },
 
     cargar: async function() {
@@ -74,16 +60,18 @@
 
     _filtrarLocal: function() {
       const q = (document.getElementById('adm-ag-busqueda')?.value || '').toLowerCase();
-      const lista = q
-        ? this._todos.filter(a => (a.apellido + ' ' + a.nombre + ' ' + a.dni).toLowerCase().includes(q))
-        : this._todos;
+      const lista = q ? this._todos.filter(a => (a.apellido + ' ' + a.nombre + ' ' + a.dni).toLowerCase().includes(q)) : this._todos;
       this._renderizar(lista);
     },
 
     _renderizar: function(agentes) {
       const body = document.getElementById('adm-ag-body');
-      const AREAS = {};
-      if (this._cache) this._cache.areas.forEach(a => AREAS[a.id] = a.nombre);
+      const AREAS = {}; const CARGOS = {}; const DELEGACIONES = {};
+      if (this._cache) {
+        this._cache.areas.forEach(a => AREAS[a.id] = a.nombre);
+        this._cache.cargos.forEach(c => CARGOS[c.id] = c.nombre);
+        this._cache.delegaciones.forEach(d => DELEGACIONES[d.id] = d.nombre);
+      }
 
       const total    = this._todos.length;
       const activos  = this._todos.filter(a => a.estado).length;
@@ -94,53 +82,89 @@
       setTxt('adm-ag-stat-inactivos', inactivos);
 
       if (!agentes || agentes.length === 0) {
-        body.innerHTML = `<div style="text-align:center;padding:40px;color:var(--text-muted);">
-          <i class="fas fa-user-slash fa-3x" style="opacity:0.2;margin-bottom:15px;"></i>
-          <p>No se encontraron agentes.</p></div>`;
+        body.innerHTML = `
+          <div style="text-align:center; padding:80px 40px; color:var(--text-muted); background:var(--bg-surface); border-radius:var(--radius-lg); border:1px dashed var(--border-hard);">
+            <i class="fas fa-user-slash fa-3x" style="opacity:0.15; margin-bottom:16px;"></i>
+            <p style="font-weight:700; font-size:1rem; margin-bottom:4px; color:var(--text-main);">Sin resultados</p>
+            <p style="font-size:0.85rem;">No se encontraron agentes con los filtros aplicados.</p>
+          </div>`;
         return;
       }
 
       const AV_COLORS = ['#7c3aed','#059669','#2563eb','#d97706','#db2777'];
-      body.innerHTML = `<div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:10px;text-align:right;font-weight:700;">
+      
+      body.innerHTML = `<div style="font-size:0.8rem; color:var(--text-muted); margin-bottom:12px; text-align:right; font-weight:700; text-transform:uppercase;">
         ${agentes.length} agente${agentes.length !== 1 ? 's' : ''}</div>` +
         agentes.map((a, i) => {
-          const area  = AREAS[a.area_id] || 'Sin área';
+          const area  = AREAS[a.area_id] || 'Sin Área Asignada';
+          const cargo = CARGOS[a.cargo_id] || 'Sin Cargo';
+          const deleg = DELEGACIONES[a.delegacion_id] || 'Sede Central';
           const color = AV_COLORS[i % AV_COLORS.length];
-          const estadoChip = a.estado
-            ? '<span class="adm-ag-chip activo">Activo</span>'
-            : '<span class="adm-ag-chip inactivo">Inactivo</span>';
+          
+          const estadoKey = a.estado ? 'ACTIVO' : 'INACTIVO';
+          const cE = a.estado ? 'var(--success)' : 'var(--danger)';
+          const bgE = a.estado ? 'var(--success-bg)' : 'var(--danger-bg)';
+          const iE = a.estado ? 'fa-user-check' : 'fa-user-slash';
+
           return `
-          <div class="adm-ag-card" style="${!a.estado ? 'opacity:0.6;' : ''}">
-            <div class="adm-ag-avatar" style="background:${color}18;color:${color};">
-              ${(a.apellido||'S')[0]}${(a.nombre||'D')[0]}
-            </div>
-            <div style="flex:1;min-width:0;">
-              <div class="adm-ag-name">${a.apellido}, ${a.nombre}${a.auth_id ? ' <i class="fas fa-circle" style="font-size:0.5rem;color:var(--success);vertical-align:middle;" title="Tiene usuario"></i>' : ''}</div>
-              <div class="adm-ag-meta">
-                <span><i class="fas fa-id-card" style="opacity:0.5;margin-right:3px;"></i>${a.dni}</span>
-                <span class="adm-ag-chip area">${area}</span>
-                ${estadoChip}
+          <div class="card-caso" style="${!a.estado ? 'opacity:0.7;' : ''}">
+            <div style="width:5px; flex-shrink:0; background:${cE};"></div>
+            <div style="flex:1; padding:14px 18px; display:grid; grid-template-columns:1fr auto; gap:8px 16px; align-items:start;">
+              
+              <div style="display:flex; align-items:center; gap:12px;">
+                <div style="width:40px; height:40px; border-radius:10px; flex-shrink:0; background:${color}18; color:${color}; display:flex; align-items:center; justify-content:center; font-size:0.95rem; font-weight:800;">
+                  ${(a.apellido||'S')[0]}${(a.nombre||'D')[0]}
+                </div>
+                <div style="min-width:0;">
+                  <div style="font-weight:800; font-size:1.05rem; color:var(--text-main); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:flex; align-items:center; gap:6px; letter-spacing: -0.01em;">
+                    ${a.apellido}, ${a.nombre}
+                    ${a.auth_id ? '<i class="fas fa-check-circle" style="font-size:0.7rem; color:var(--success);" title="Posee usuario del sistema"></i>' : ''}
+                  </div>
+                  <div style="font-size:0.8rem; color:var(--text-muted); display:flex; align-items:center; gap:4px; font-weight:500;">
+                    <i class="fas fa-id-card" style="opacity:0.5;"></i> DNI: ${a.dni}
+                  </div>
+                </div>
               </div>
-            </div>
-            <div style="display:flex;gap:6px;">
-              <button class="btn btn-outline" style="padding:6px 10px;font-size:0.75rem;"
-                      onclick="event.stopPropagation();AdminAgentes.editar('${a.id}')" title="Editar">
-                <i class="fas fa-pencil-alt" style="color:var(--primary);"></i>
-              </button>
-              <button class="btn btn-outline" style="padding:6px 10px;font-size:0.75rem;"
-                      onclick="event.stopPropagation();AdminAgentes.toggleEstado('${a.id}',${!a.estado},'${a.apellido}, ${a.nombre}')"
-                      title="${a.estado ? 'Desactivar' : 'Activar'}">
-                <i class="fas ${a.estado ? 'fa-user-slash' : 'fa-user-check'}"
-                   style="color:${a.estado ? 'var(--danger)' : 'var(--success)'};"></i>
-              </button>
+
+              <div style="display:flex; align-items:center; gap:5px; justify-self:end; padding:5px 12px; border-radius:20px; font-size:0.72rem; font-weight:800; text-transform:uppercase; letter-spacing:0.3px; background:${bgE}; color:${cE}; white-space:nowrap; align-self:center;">
+                <i class="fas ${iE}" style="font-size:0.65rem;"></i> ${estadoKey}
+              </div>
+
+              <div style="grid-column:1 / -1; display:flex; align-items:center; justify-content:space-between; border-top:1px dashed var(--border-soft); padding-top:12px; margin-top: 4px;">
+                <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                  <span style="font-size:0.75rem; font-weight:700; padding:4px 12px; border-radius:8px; background:var(--primary-light); color:var(--primary); text-transform:uppercase; letter-spacing:0.5px;">
+                    <i class="fas fa-building" style="margin-right:4px;"></i> ${area}
+                  </span>
+                  <span style="font-size:0.75rem; font-weight:600; color:var(--text-muted);"><i class="fas fa-briefcase" style="opacity:0.5; margin-right:4px;"></i> ${cargo}</span>
+                  <span style="font-size:0.75rem; font-weight:600; color:var(--text-muted); border-left:1px solid var(--border-hard); padding-left:10px;"><i class="fas fa-map-marker-alt" style="opacity:0.5; margin-right:4px;"></i> ${deleg}</span>
+                </div>
+                <div style="display:flex; gap:6px;">
+                  <button class="btn btn-outline btn-icono" style="width:34px; height:34px; background:var(--bg-surface);" onclick="event.stopPropagation();AdminAgentes.editar('${a.id}')" title="Editar Ficha">
+                    <i class="fas fa-pencil-alt" style="color:var(--primary); font-size: 0.8rem;"></i>
+                  </button>
+                  <button class="btn btn-outline btn-icono" style="width:34px; height:34px; background:var(--bg-surface);" onclick="event.stopPropagation();AdminAgentes.toggleEstado('${a.id}',${!a.estado},'${a.apellido}, ${a.nombre}')" title="${a.estado ? 'Suspender Agente' : 'Habilitar Agente'}">
+                    <i class="fas ${a.estado ? 'fa-user-slash' : 'fa-user-check'}" style="color:${a.estado ? 'var(--danger)' : 'var(--success)'}; font-size: 0.8rem;"></i>
+                  </button>
+                </div>
+              </div>
+
             </div>
           </div>`;
         }).join('');
     },
 
     _tab: function(i) {
+      // Toggle the active class on buttons
       document.querySelectorAll('.adm-tab-btn').forEach((b, idx) => b.classList.toggle('active', idx === i));
-      document.querySelectorAll('.adm-tab-panel').forEach((p, idx) => p.classList.toggle('active', idx === i));
+      
+      // Toggle the 'hidden' class on the panels (this fixes the overlapping issue)
+      document.querySelectorAll('.adm-tab-panel').forEach((p, idx) => {
+        if (idx === i) {
+          p.classList.remove('hidden');
+        } else {
+          p.classList.add('hidden');
+        }
+      });
     },
 
     _toggleDiscapacidad: function() {
@@ -154,8 +178,7 @@
       Portal_Core.abrirModal('modal-agente');
 
       document.getElementById('ag-id').value = '';
-      document.getElementById('modal-ag-titulo').innerHTML =
-        '<i class="fas fa-user-plus" style="color:var(--primary)"></i> Nuevo Agente';
+      document.getElementById('modal-ag-titulo').innerHTML = '<i class="fas fa-user-plus" style="color:var(--primary); margin-right:8px;"></i> Nuevo Agente';
 
       ['ag-apellido','ag-nombre','ag-dni','ag-cuil','ag-fecha-nac','ag-telefono','ag-email',
        'ag-domicilio','ag-titulo','ag-fecha-inicio','ag-fecha-venc','ag-hora-ingreso','ag-horas-laborales'].forEach(id => {
@@ -185,8 +208,7 @@
       Portal_Core.abrirModal('modal-agente');
       this._poblarSelectsModal();
       this._tab(0);
-      document.getElementById('modal-ag-titulo').innerHTML =
-        '<i class="fas fa-pencil-alt" style="color:var(--primary)"></i> Editar Agente';
+      document.getElementById('modal-ag-titulo').innerHTML = '<i class="fas fa-pencil-alt" style="color:var(--primary); margin-right:8px;"></i> Editar Agente';
 
       try {
         const res = await Portal_Core.ejecutarBackend('obtenerAgenteBackend', id);
@@ -266,7 +288,7 @@
       try {
         const res = await Portal_Core.ejecutarBackend('guardarAgenteBackend', payload);
         btn.disabled = false;
-        btn.innerHTML = '<i class="fas fa-save" style="margin-right:5px;"></i> Guardar';
+        btn.innerHTML = '<i class="fas fa-save" style="margin-right:5px;"></i> Guardar Agente';
         if (res.success) {
           Portal_Core.cerrarModal('modal-agente');
           Portal_Core.mostrarToast('success', 'Guardado', res.message);
@@ -276,7 +298,7 @@
         }
       } catch (err) {
         btn.disabled = false;
-        btn.innerHTML = '<i class="fas fa-save" style="margin-right:5px;"></i> Guardar';
+        btn.innerHTML = '<i class="fas fa-save" style="margin-right:5px;"></i> Guardar Agente';
         Portal_Core.mostrarToast('error', 'Error de Red', err.message);
       }
     },

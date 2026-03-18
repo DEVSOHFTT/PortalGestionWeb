@@ -54,7 +54,7 @@
             <span class="perm-group-count" id="pcnt-${containerId}-${g.key}">${checkedCount}/${g.items.length}</span>
             <button class="perm-group-toggle" id="ptgl-${containerId}-${g.key}"
                     onclick="event.stopPropagation(); _toggleGrupoPermisos('${containerId}','${g.key}','${cssClass}')">
-              ${allChecked ? 'Quitar todos' : 'Marcar todos'}
+              ${allChecked ? 'Quitar Todos' : 'Marcar Todos'}
             </button>
           </div>
           <div class="perm-group-body" id="pbody-${containerId}-${g.key}">${items}</div>
@@ -93,7 +93,7 @@
       const total   = checks.length;
       const checked = Array.from(checks).filter(c => c.checked).length;
       if (cntEl) cntEl.textContent = `${checked}/${total}`;
-      if (btEl)  btEl.textContent  = checked === total ? 'Quitar todos' : 'Marcar todos';
+      if (btEl)  btEl.textContent  = checked === total ? 'Quitar Todos' : 'Marcar Todos';
     });
   }
 
@@ -146,9 +146,13 @@
       this.renderizarTabla(lista);
     },
 
+    // =========================================================
+    // RENDERIZADO VISUAL ESPACIOSO (IDÉNTICO A AGENTES)
+    // =========================================================
     renderizarTabla: function(usuarios) {
       const TIPOS   = { 1:'Sistemas', 2:'Administrador', 3:'Supervisor', 4:'Operador', 5:'Consulta' };
       const COLORES = { 1:'#7c3aed', 2:'#2563eb', 3:'#059669', 4:'#d97706', 5:'#6b7280' };
+      const ICONS   = { 1:'fa-laptop-code', 2:'fa-user-tie', 3:'fa-user-shield', 4:'fa-user-cog', 5:'fa-eye' };
 
       const total    = this._todos.length;
       const activos  = this._todos.filter(u => u.estado).length;
@@ -160,54 +164,73 @@
 
       const body = document.getElementById('admin-usr-body');
       if (!usuarios || usuarios.length === 0) {
-        body.innerHTML = `<div style="text-align:center;padding:40px;color:var(--text-muted);">
-          <i class="fas fa-user-slash fa-3x" style="opacity:0.2;margin-bottom:15px;"></i>
-          <p>No hay usuarios registrados.</p></div>`;
+        body.innerHTML = `
+          <div style="text-align:center; padding:80px 40px; color:var(--text-muted); background:var(--bg-surface); border-radius:var(--radius-lg); border:1px dashed var(--border-hard);">
+            <i class="fas fa-users-slash fa-3x" style="opacity:0.15; margin-bottom:16px;"></i>
+            <p style="font-weight:700; font-size:1rem; margin-bottom:4px; color:var(--text-main);">Sin resultados</p>
+            <p style="font-size:0.85rem;">No se encontraron usuarios con ese nombre.</p>
+          </div>`;
         return;
       }
 
-      body.innerHTML = `<div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:10px;text-align:right;font-weight:700;">
+      body.innerHTML = `<div style="font-size:0.8rem; color:var(--text-muted); margin-bottom:12px; text-align:right; font-weight:700; text-transform:uppercase;">
         ${usuarios.length} usuario${usuarios.length !== 1 ? 's' : ''}</div>` +
-        usuarios.map(u => {
-          const tipo  = TIPOS[u.tipo_usuario_id]   || 'Sin tipo';
+        usuarios.map((u, i) => {
+          const tipo  = TIPOS[u.tipo_usuario_id]   || 'Sin rol asignado';
           const color = COLORES[u.tipo_usuario_id] || '#6b7280';
+          const iconT = ICONS[u.tipo_usuario_id]   || 'fa-user';
           const permisos   = (u.accesos || []).length;
-          const estadoChip = u.estado
-            ? '<span class="usr-chip activo">Activo</span>'
-            : '<span class="usr-chip inactivo">Inactivo</span>';
+          
+          const estadoKey = u.estado ? 'ACCESO HABILITADO' : 'ACCESO SUSPENDIDO';
+          const cE = u.estado ? 'var(--success)' : 'var(--danger)';
+          const bgE = u.estado ? 'var(--success-bg)' : 'var(--danger-bg)';
+          const iE = u.estado ? 'fa-check-circle' : 'fa-ban';
 
           return `
-          <div class="usr-card" style="${!u.estado ? 'opacity:0.6;' : ''}">
-            <div class="usr-avatar" style="background:${color}18;color:${color};">
-              ${(u.apellido||'S')[0]}${(u.nombre||'D')[0]}
-            </div>
-            <div style="flex:1;min-width:0;">
-              <div class="usr-name">${u.apellido||''}, ${u.nombre||''}</div>
-              <div class="usr-meta">
-                <span><i class="fas fa-at" style="opacity:0.5;margin-right:2px;"></i>${u.username}</span>
-                <span style="background:${color}18;color:${color};padding:2px 8px;border-radius:10px;font-weight:700;font-size:0.7rem;">${tipo}</span>
-                <span><i class="fas fa-key" style="opacity:0.5;margin-right:2px;"></i>${permisos} permisos</span>
-                ${estadoChip}
+          <div class="card-caso" style="${!u.estado ? 'opacity:0.7;' : ''}">
+            <div style="width:5px; flex-shrink:0; background:${cE};"></div>
+            <div style="flex:1; padding:16px 20px; display:grid; grid-template-columns:1fr auto; gap:10px 16px; align-items:start;">
+              
+              <div style="display:flex; align-items:center; gap:14px;">
+                <div style="width:46px; height:46px; border-radius:12px; flex-shrink:0; background:${color}18; color:${color}; display:flex; align-items:center; justify-content:center; font-size:1.1rem; font-weight:800;">
+                  ${(u.apellido||'S')[0]}${(u.nombre||'D')[0]}
+                </div>
+                <div style="min-width:0;">
+                  <div style="font-weight:800; font-size:1.1rem; color:var(--text-main); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:flex; align-items:center; gap:8px; letter-spacing: -0.01em;">
+                    ${u.apellido||''}, ${u.nombre||''}
+                  </div>
+                  <div style="font-size:0.85rem; color:var(--text-muted); display:flex; align-items:center; gap:6px; font-weight:600; margin-top: 2px;">
+                    <i class="far fa-id-badge" style="opacity:0.6;"></i> <span style="font-family: monospace;">${u.username}</span>
+                  </div>
+                </div>
               </div>
-            </div>
-            <div style="display:flex;gap:6px;">
-              <button class="btn btn-outline" style="padding:6px 10px;font-size:0.75rem;"
-                      onclick="AdminUsuarios.abrirEditar('${u.id}')" title="Editar permisos">
-                <i class="fas fa-pencil-alt" style="color:var(--primary);"></i>
-              </button>
-              <button class="btn btn-outline" style="padding:6px 10px;font-size:0.75rem;"
-                      onclick="AdminUsuarios.abrirResetPassword('${u.username}','${u.apellido}, ${u.nombre}')" title="Resetear contraseña">
-                <i class="fas fa-key" style="color:var(--warning);"></i>
-              </button>
-              ${u.estado ? `
-              <button class="btn btn-outline" style="padding:6px 10px;font-size:0.75rem;"
-                      onclick="AdminUsuarios.confirmarDesactivar('${u.id}','${u.apellido}, ${u.nombre}')" title="Desactivar">
-                <i class="fas fa-user-slash" style="color:var(--danger);"></i>
-              </button>` : `
-              <button class="btn btn-outline" style="padding:6px 10px;font-size:0.75rem;"
-                      onclick="AdminUsuarios.confirmarReactivar('${u.id}','${u.apellido}, ${u.nombre}')" title="Reactivar">
-                <i class="fas fa-user-check" style="color:var(--success);"></i>
-              </button>`}
+
+              <div style="display:flex; align-items:center; gap:6px; justify-self:end; padding:6px 14px; border-radius:20px; font-size:0.75rem; font-weight:800; text-transform:uppercase; letter-spacing:0.5px; background:${bgE}; color:${cE}; white-space:nowrap; align-self:center;">
+                <i class="fas ${iE}" style="font-size:0.7rem;"></i> ${estadoKey}
+              </div>
+
+              <div style="grid-column:1 / -1; display:flex; align-items:center; justify-content:space-between; border-top:1px dashed var(--border-soft); padding-top:14px; margin-top: 6px;">
+                <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+                  <span style="font-size:0.8rem; font-weight:800; padding:6px 14px; border-radius:8px; background:${color}18; color:${color}; text-transform:uppercase; letter-spacing:0.5px; display:flex; align-items:center; gap:6px;">
+                    <i class="fas ${iconT}"></i> ${tipo}
+                  </span>
+                  <span style="font-size:0.8rem; font-weight:600; color:var(--text-muted); display:flex; align-items:center; gap:6px; border-left: 1px solid var(--border-hard); padding-left: 12px;">
+                    <i class="fas fa-key" style="color: var(--warning);"></i> ${permisos} permisos granulares
+                  </span>
+                </div>
+                <div style="display:flex; gap:8px;">
+                  <button class="btn btn-outline btn-icono" style="width:36px; height:36px; background:var(--bg-surface); border-color:var(--border-hard);" onclick="AdminUsuarios.abrirEditar('${u.id}')" title="Modificar Permisos">
+                    <i class="fas fa-pencil-alt" style="color:var(--primary); font-size: 0.85rem;"></i>
+                  </button>
+                  <button class="btn btn-outline btn-icono" style="width:36px; height:36px; background:var(--bg-surface); border-color:var(--border-hard);" onclick="AdminUsuarios.abrirResetPassword('${u.username}','${u.apellido}, ${u.nombre}')" title="Blanquear Contraseña">
+                    <i class="fas fa-key" style="color:var(--warning); font-size: 0.85rem;"></i>
+                  </button>
+                  <button class="btn btn-outline btn-icono" style="width:36px; height:36px; background:var(--bg-surface); border-color:var(--border-hard);" onclick="AdminUsuarios.${u.estado ? 'confirmarDesactivar' : 'confirmarReactivar'}('${u.id}','${u.apellido}, ${u.nombre}')" title="${u.estado ? 'Suspender Acceso' : 'Reactivar Acceso'}">
+                    <i class="fas ${u.estado ? 'fa-user-slash' : 'fa-user-check'}" style="color:${u.estado ? 'var(--danger)' : 'var(--success)'}; font-size: 0.85rem;"></i>
+                  </button>
+                </div>
+              </div>
+
             </div>
           </div>`;
         }).join('');
@@ -215,11 +238,18 @@
 
     _tabCrear: function(i) {
       document.querySelectorAll('#modal-crear-usuario .usr-tab-btn').forEach((b,idx) => b.classList.toggle('active', idx===i));
-      document.querySelectorAll('#modal-crear-usuario .usr-tab-panel').forEach((p,idx) => p.classList.toggle('active', idx===i));
+      document.querySelectorAll('#modal-crear-usuario .usr-tab-panel').forEach((p,idx) => {
+        if (idx === i) p.classList.remove('hidden');
+        else p.classList.add('hidden');
+      });
     },
+
     _tabEditar: function(i) {
       document.querySelectorAll('#modal-editar-usuario .usr-tab-btn').forEach((b,idx) => b.classList.toggle('active', idx===i));
-      document.querySelectorAll('#modal-editar-usuario .usr-tab-panel').forEach((p,idx) => p.classList.toggle('active', idx===i));
+      document.querySelectorAll('#modal-editar-usuario .usr-tab-panel').forEach((p,idx) => {
+        if (idx === i) p.classList.remove('hidden');
+        else p.classList.add('hidden');
+      });
     },
 
     abrirModalCrear: async function() {
@@ -228,12 +258,11 @@
       document.getElementById('adm-agente').value       = '';
       document.getElementById('adm-password').value     = '';
       document.getElementById('adm-tipo-usuario').value = '';
-      document.getElementById('adm-permisos-grid').innerHTML =
-        '<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:0.82rem;">Cargando permisos...</div>';
+      document.getElementById('adm-permisos-grid').innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:0.85rem;"><i class="fas fa-circle-notch spinner"></i> Cargando cuadrícula...</div>';
 
       const btn = document.getElementById('btn-crear-usuario');
       btn.disabled = false;
-      btn.innerHTML = '<i class="fas fa-save" style="margin-right:5px;"></i> Crear usuario';
+      btn.innerHTML = '<i class="fas fa-save" style="margin-right:5px;"></i> Habilitar Usuario';
 
       this._tabCrear(0);
 
@@ -272,17 +301,17 @@
       const tipoId   = document.getElementById('adm-tipo-usuario').value;
       if (!dni)                            return Portal_Core.mostrarToast('warning', 'Validación', 'Seleccione un agente.');
       if (!password || password.length < 6) return Portal_Core.mostrarToast('warning', 'Validación', 'La contraseña debe tener al menos 6 caracteres.');
-      if (!tipoId)                         return Portal_Core.mostrarToast('warning', 'Validación', 'Seleccione un tipo de usuario.');
+      if (!tipoId)                         return Portal_Core.mostrarToast('warning', 'Validación', 'Seleccione un rol del sistema.');
 
       const permisosIds = [];
       document.querySelectorAll('.adm-permiso-check:checked').forEach(cb => permisosIds.push(cb.value));
 
       const btn = document.getElementById('btn-crear-usuario');
-      btn.disabled = true; btn.innerHTML = '<i class="fas fa-circle-notch spinner"></i> Creando...';
+      btn.disabled = true; btn.innerHTML = '<i class="fas fa-circle-notch spinner"></i> Habilitando...';
 
       try {
         const res = await Portal_Core.ejecutarBackend('crearUsuarioSistema', { dni, password, tipo_usuario_id: tipoId, permisos_ids: permisosIds });
-        btn.disabled = false; btn.innerHTML = '<i class="fas fa-save" style="margin-right:5px;"></i> Crear usuario';
+        btn.disabled = false; btn.innerHTML = '<i class="fas fa-save" style="margin-right:5px;"></i> Habilitar Usuario';
         if (res.success) { 
           Portal_Core.cerrarModal('modal-crear-usuario'); 
           Portal_Core.mostrarToast('success','Usuario Creado',res.message); 
@@ -291,7 +320,7 @@
           Portal_Core.mostrarToast('error','Error',res.message);
         }
       } catch (err) {
-        btn.disabled = false; btn.innerHTML = '<i class="fas fa-save" style="margin-right:5px;"></i> Crear usuario';
+        btn.disabled = false; btn.innerHTML = '<i class="fas fa-save" style="margin-right:5px;"></i> Habilitar Usuario';
         Portal_Core.mostrarToast('error','Error de Red',err.message);
       }
     },
@@ -318,7 +347,7 @@
 
       try {
         const res = await Portal_Core.ejecutarBackend('resetearPasswordUsuario', dni, nuevoPass);
-        btn.disabled = false; btn.innerHTML = '<i class="fas fa-sync-alt" style="margin-right:5px;"></i> Resetear';
+        btn.disabled = false; btn.innerHTML = '<i class="fas fa-sync-alt" style="margin-right:5px;"></i> Restablecer Acceso';
         if (res.success) { 
           Portal_Core.cerrarModal('modal-reset-password'); 
           Portal_Core.mostrarToast('success','Contraseña Reseteada',res.message); 
@@ -326,17 +355,33 @@
           Portal_Core.mostrarToast('error','Error',res.message);
         }
       } catch (err) {
-        btn.disabled = false; btn.innerHTML = '<i class="fas fa-sync-alt" style="margin-right:5px;"></i> Resetear';
+        btn.disabled = false; btn.innerHTML = '<i class="fas fa-sync-alt" style="margin-right:5px;"></i> Restablecer Acceso';
         Portal_Core.mostrarToast('error', 'Error de Red', err.message);
       }
     },
 
     confirmarDesactivar: function(usuarioId, nombre) {
-      Portal_Core.mostrarConfirmacion('¿Desactivar usuario?', `El usuario de ${nombre} será desactivado.`, async () => {
+      Portal_Core.mostrarConfirmacion('¿Suspender acceso?', `El usuario de ${nombre} será suspendido y no podrá ingresar al Portal.`, async () => {
         try {
           const res = await Portal_Core.ejecutarBackend('desactivarUsuario', usuarioId);
           if (res.success) { 
-            Portal_Core.mostrarToast('success','Desactivado',res.message); 
+            Portal_Core.mostrarToast('success','Suspendido',res.message); 
+            this.cargarUsuarios(); 
+          } else {
+            Portal_Core.mostrarToast('error','Error',res.message);
+          }
+        } catch (err) {
+          Portal_Core.mostrarToast('error', 'Error de Red', err.message);
+        }
+      });
+    },
+    
+    confirmarReactivar: function(usuarioId, nombre) {
+      Portal_Core.mostrarConfirmacion('¿Reactivar usuario?', `El usuario de ${nombre} podrá ingresar nuevamente al Portal.`, async () => {
+        try {
+          const res = await Portal_Core.ejecutarBackend('reactivarUsuario', usuarioId);
+          if (res.success) { 
+            Portal_Core.mostrarToast('success','Reactivado',res.message); 
             this.cargarUsuarios(); 
           } else {
             Portal_Core.mostrarToast('error','Error',res.message);
@@ -350,7 +395,7 @@
     abrirEditar: async function(usuarioId) {
       Portal_Core.abrirModal('modal-editar-usuario');
       const grid = document.getElementById('edit-usr-permisos-grid');
-      if (grid) grid.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:0.82rem;"><i class="fas fa-circle-notch spinner"></i> Cargando...</div>';
+      if (grid) grid.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:0.85rem;"><i class="fas fa-circle-notch spinner"></i> Descargando accesos...</div>';
       this._tabEditar(0);
 
       try {
@@ -394,38 +439,22 @@
       document.querySelectorAll('.edit-permiso-check:checked').forEach(cb => permisosIds.push(cb.value));
 
       const btn = document.getElementById('btn-guardar-edicion-usr');
-      btn.disabled = true; btn.innerHTML = '<i class="fas fa-circle-notch spinner"></i> Guardando...';
+      btn.disabled = true; btn.innerHTML = '<i class="fas fa-circle-notch spinner"></i> Actualizando...';
 
       try {
         const res = await Portal_Core.ejecutarBackend('actualizarUsuarioCompleto', usuarioId, tipoId, permisosIds);
-        btn.disabled = false; btn.innerHTML = '<i class="fas fa-save" style="margin-right:5px;"></i> Guardar cambios';
+        btn.disabled = false; btn.innerHTML = '<i class="fas fa-save" style="margin-right:5px;"></i> Actualizar Perfil';
         if (res.success) { 
           Portal_Core.cerrarModal('modal-editar-usuario'); 
           Portal_Core.mostrarToast('success','Actualizado',res.message); 
-          AdminUsuarios.cargarUsuarios(); 
+          this.cargarUsuarios(); 
         } else {
           Portal_Core.mostrarToast('error','Error',res.message);
         }
       } catch (err) {
-        btn.disabled = false; btn.innerHTML = '<i class="fas fa-save" style="margin-right:5px;"></i> Guardar cambios';
+        btn.disabled = false; btn.innerHTML = '<i class="fas fa-save" style="margin-right:5px;"></i> Actualizar Perfil';
         Portal_Core.mostrarToast('error','Error de Red',err.message);
       }
-    },
-
-    confirmarReactivar: function(usuarioId, nombre) {
-      Portal_Core.mostrarConfirmacion('¿Reactivar usuario?', 'El usuario de ' + nombre + ' podrá ingresar nuevamente.', async () => {
-        try {
-          const res = await Portal_Core.ejecutarBackend('reactivarUsuario', usuarioId);
-          if (res.success) { 
-            Portal_Core.mostrarToast('success','Reactivado',res.message); 
-            AdminUsuarios.cargarUsuarios(); 
-          } else {
-            Portal_Core.mostrarToast('error','Error',res.message);
-          }
-        } catch (err) {
-          Portal_Core.mostrarToast('error', 'Error de Red', err.message);
-        }
-      });
     }
   };
 </script>
