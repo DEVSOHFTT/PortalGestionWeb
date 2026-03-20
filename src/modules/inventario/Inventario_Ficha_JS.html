@@ -1,139 +1,281 @@
 <script>
   /**
    * ========================================================================
-   * Inventario_Ficha_JS.html
+   * Inventario_Ficha_JS.html  — v2.4
    * PROYECTO: Portal de Gestión - Defensoría del Pueblo
-   * RESPONSABILIDAD: Lógica de la vista Ficha de Activo.
-   *   - Carga y renderizado de los datos del activo.
-   *   - Dibujo del timeline de movimientos.
-   *   - Modal de registro de movimiento (traslado, consumo, baja, reparación).
-   *   - No conoce la lógica de Bandeja ni de Scan.
-   *   - Depende de: AppState_JS (INV_App.estadoActual, Memoria, USUARIO_ACTUAL),
-   *                 Core_JS (mostrarToast, cerrarModal).
+   * ========================================================================
+   * CAMBIOS v2.4:
+   *   • FIX CRÍTICO: abrirModalMovimiento() ya no usa IDs hardcodeados de
+   *     tipos de movimiento. Ahora resuelve el tipo_movimiento_id buscando
+   *     el nombre en cache.tipos_movimiento (datos reales de la DB).
+   *     Si la DB cambia los IDs o agrega tipos, el JS sigue funcionando.
+   *   • FIX: Reparación estaba asignando tipoId=4 (Asignación) en vez del
+   *     tipo correcto. Ahora usa _resolverTipoMov('Reparación').
+   *   • FIX: estado_color eliminado (no existe en inv_estados v2.3).
+   *     Los colores de estado ahora los resuelve _colorEstado() local.
+   *   • FIX: renderTimeline usa _iconoYColorTipo() que también es dinámico.
+   *   • Guard defensivo: si el diccionario no está en caché, lo pide.
    * ========================================================================
    */
-  
+
+  if (!window.INV_App || typeof window.INV_App !== 'object') {
+    console.warn('[INV Ficha] INV_App no encontrado — creando namespace de emergencia.');
+    window.INV_App = {};
+  }
+
   Object.assign(window.INV_App, {
 
+    // =========================================================
+    // HELPERS DE DICCIONARIO — resuelven IDs por nombre
+    // =========================================================
+
+    /**
+     * Devuelve el id numérico del tipo de movimiento cuyo nombre
+     * contenga (case-insensitive) la cadena buscada.
+     * Si no lo encuentra retorna null y loguea un aviso.
+     */
+    _resolverTipoMov: function(nombreParcial) {
+      const cache = Memoria.leer('diccionariosINV');
+      if (!cache || !cache.tipos_movimiento) {
+        console.warn('[INV Ficha] Diccionario tipos_movimiento no disponible en caché.');
+        return null;
+      }
+      const tipo = cache.tipos_movimiento.find(
+        t => t.nombre.toLowerCase().includes(nombreParcial.toLowerCase())
+      );
+      if (!tipo) {
+        console.warn(`[INV Ficha] Tipo de movimiento no encontrado: "${nombreParcial}"`);
+        return null;
+      }
+      return tipo.id;
+    },
+
+    /**
+     * Devuelve un color CSS para el estado dado su nombre.
+     * No depende de inv_estados.color (columna inexistente en v2.3).
+     */
+    _colorEstado: function(nombreEstado) {
+      if (!nombreEstado) return 'var(--text-muted)';
+      const n = nombreEstado.toLowerCase();
+      if (n.includes('disponible'))   return 'var(--success)';
+      if (n.includes('asignado'))     return 'var(--primary)';
+      if (n.includes('reparaci'))     return 'var(--warning)';
+      if (n.includes('baja'))         return 'var(--danger)';
+      if (n.includes('dep'))          return '#6b7280';
+      return 'var(--text-muted)';
+    },
+
+    /**
+     * Devuelve { icono, color } para un tipo de movimiento dado su nombre.
+     * Usado en la timeline del historial.
+     */
+    _iconoYColorTipo: function(nombreTipo) {
+      if (!nombreTipo) return { icono: 'fa-circle', color: 'var(--text-muted)' };
+      const n = nombreTipo.toLowerCase();
+      if (n.includes('alta'))       return { icono: 'fa-plus-circle',   color: 'var(--success)' };
+      if (n.includes('traslado'))   return { icono: 'fa-people-carry',  color: 'var(--primary)' };
+      if (n.includes('asignaci'))   return { icono: 'fa-user-check',    color: 'var(--primary)' };
+      if (n.includes('reparaci'))   return { icono: 'fa-tools',         color: 'var(--warning)' };
+      if (n.includes('consumo'))    return { icono: 'fa-box-open',      color: 'var(--warning)' };
+      if (n.includes('baja'))       return { icono: 'fa-trash-alt',     color: 'var(--danger)'  };
+      if (n.includes('foto') || n.includes('evidencia'))
+                                    return { icono: 'fa-camera',        color: '#8b5cf6'         };
+      return { icono: 'fa-exchange-alt', color: 'var(--primary)' };
+    },
+
+    // =========================================================
+    // INICIALIZACIÓN DE LA FICHA
+    // =========================================================
     iniciarFicha: async function(idActivo) {
-      this.estadoActual.idQR = idActivo;
-
       document.getElementById('ruta-actual').innerText = 'Ficha del Activo';
-      document.getElementById('content-inv-ficha').classList.add('hidden');
-      document.getElementById('loader-inv-ficha').classList.remove('hidden');
 
-      if (typeof INV_App.detenerCamaraEnVivo === 'function') INV_App.detenerCamaraEnVivo();
-
-      const modal = document.getElementById('modal-inv-movimiento');
-      if (modal && modal.parentElement !== document.body) document.body.appendChild(modal);
+      const loaderEl  = document.getElementById('loader-inv-ficha');
+      const contentEl = document.getElementById('content-inv-ficha');
+      if (loaderEl)  loaderEl.classList.remove('hidden');
+      if (contentEl) contentEl.classList.add('hidden');
 
       try {
         const res = await Portal_Core.ejecutarBackend('obtenerFichaActivoBackend', idActivo);
-        if (!res.success) {
-          Portal_Core.mostrarToast('error', 'Error', res.message);
-          this.volverAlScanOBandeja();
+
+        if (!res || !res.success) {
+          if (loaderEl) loaderEl.innerHTML = `
+            <div style="text-align:center; padding:40px;">
+              <i class="fas fa-exclamation-circle fa-3x" style="color:var(--danger); margin-bottom:15px;"></i>
+              <p style="font-weight:600; color:var(--text-main);">${res ? res.message : 'Sin respuesta del servidor.'}</p>
+              <button class="btn btn-outline" style="margin-top:15px;" onclick="INV_App.volverAlScanOBandeja()">
+                <i class="fas fa-arrow-left"></i> Volver
+              </button>
+            </div>`;
           return;
         }
-        this.estadoActual.activo = res.activo;
-        this.renderizarFicha(res.activo, res.historial);
+
+        this.estadoActual = { idQR: idActivo, activo: res.activo };
+        this._renderFicha(res.activo, res.historial || []);
+
+        if (loaderEl)  loaderEl.classList.add('hidden');
+        if (contentEl) contentEl.classList.remove('hidden');
+
       } catch (err) {
-        Portal_Core.mostrarToast('error', 'Error de Red', err.message);
-        this.volverAlScanOBandeja();
+        if (loaderEl) loaderEl.innerHTML = `
+          <div style="text-align:center; padding:40px;">
+            <i class="fas fa-exclamation-circle fa-3x" style="color:var(--danger); margin-bottom:15px;"></i>
+            <p style="font-weight:600; color:var(--text-main);">Error: ${err.message}</p>
+          </div>`;
       }
     },
 
     volverAlScanOBandeja: function() {
-      cargarModulo('InventarioBandeja');
+      const vista = (this.estadoActual && this.estadoActual.origenScan)
+        ? 'InventarioScan'
+        : 'InventarioBandeja';
+      cargarModulo(vista);
     },
 
-    renderizarFicha: function(activo, historial) {
-      document.getElementById('ficha-inv-id').innerText       = activo.activo_id.substring(0, 8).toUpperCase();
-      document.getElementById('ficha-inv-titulo').innerText   = `${activo.marca || ''} ${activo.modelo || ''}`.trim() || activo.categoria;
-      document.getElementById('ficha-inv-subtitulo').innerText = activo.categoria;
+    // =========================================================
+    // RENDERIZADO DE LA FICHA
+    // =========================================================
+    _renderFicha: function(a, historial) {
+      const esConsumible = (a.stock_actual !== null && a.stock_actual !== undefined);
 
-      const badge = document.getElementById('ficha-inv-estado');
-      badge.innerText           = activo.estado;
-      badge.style.backgroundColor = activo.estado_color || 'var(--primary)';
+      // ── Header ──────────────────────────────────────────────
+      const titulo = [a.marca, a.modelo].filter(Boolean).join(' ') || a.categoria || 'Activo';
+      document.getElementById('ficha-inv-titulo').innerText    = titulo;
+      document.getElementById('ficha-inv-subtitulo').innerText = a.categoria || '';
+      document.getElementById('ficha-inv-id').innerText        = a.activo_id;
+      document.getElementById('ficha-inv-estado').innerText    = a.estado || 'Sin estado';
 
-      document.getElementById('ficha-inv-ubicacion').innerHTML =
-        activo.edificio
-          ? `${activo.edificio}<br>
-             <span style="font-size:0.8rem; color:var(--text-muted); font-weight:500;">
-               ${activo.piso || 'S/P'} &bull; ${activo.area_asignada}
-             </span>`
-          : `<span style="color:var(--warning);">Depósito Central</span>`;
-
-      document.getElementById('ficha-inv-responsable').innerText =
-        activo.agente_asignado !== 'Sin Asignar'
-          ? activo.agente_asignado
-          : activo.area_asignada !== 'Sin Área'
-            ? `Área: ${activo.area_asignada}`
-            : 'Sin Responsable';
-
-      const boxSerie  = document.getElementById('box-inv-serie');
-      const boxStock  = document.getElementById('box-inv-stock');
-      const btnFijo   = document.getElementById('inv-botones-fijo');
-      const btnInsumo = document.getElementById('inv-botones-insumo');
-
-      if (activo.es_consumible) {
-        boxSerie.classList.add('hidden');
-        boxStock.classList.remove('hidden');
-        document.getElementById('ficha-inv-stock').innerText = activo.stock_actual;
-        btnFijo.classList.add('hidden');
-        btnInsumo.classList.remove('hidden');
-      } else {
-        boxStock.classList.add('hidden');
-        boxSerie.classList.remove('hidden');
-        document.getElementById('ficha-inv-serie').innerHTML =
-          `${activo.nro_serie_imei || 'S/N'}<br>
-           <span style="font-size:0.8rem; color:var(--text-muted); font-weight:500;">
-             ID Adm: ${activo.id_patrimonial || 'S/D'}
-           </span>`;
-        btnInsumo.classList.add('hidden');
-        btnFijo.classList.remove('hidden');
+      const headerCard = document.querySelector('.inv-header-card');
+      if (headerCard) {
+        const color = this._colorEstado(a.estado);
+        headerCard.style.background = `linear-gradient(135deg, ${color} 0%, ${color}cc 100%)`;
       }
 
-      this.dibujarTimeline(historial);
+      // ── Boxes de info ────────────────────────────────────────
+      document.getElementById('ficha-inv-ubicacion').innerText =
+        [a.edificio, a.piso].filter(Boolean).join(' — ') || 'Sin asignar';
+      document.getElementById('ficha-inv-responsable').innerText =
+        a.agente_asignado || 'Sin asignar';
+      document.getElementById('ficha-inv-serie').innerText =
+        [a.nro_serie_imei, a.id_administracion].filter(Boolean).join(' / ') || 'S/D';
 
-      document.getElementById('loader-inv-ficha').classList.add('hidden');
-      document.getElementById('content-inv-ficha').classList.remove('hidden');
+      const boxStock = document.getElementById('box-inv-stock');
+      if (esConsumible && boxStock) {
+        boxStock.classList.remove('hidden');
+        document.getElementById('ficha-inv-stock').innerText = a.stock_actual;
+      } else if (boxStock) {
+        boxStock.classList.add('hidden');
+      }
+
+      // Fechas opcionales
+      this._mostrarBoxFecha('box-inv-fecha-adq', 'ficha-inv-fecha-adq', a.fecha_adquisicion);
+      this._mostrarBoxFecha('box-inv-fecha-ent', 'ficha-inv-fecha-ent', a.fecha_entrega);
+
+      // ── Flags de auditoría ────────────────────────────────────
+      this._renderFlags(a);
+
+      // ── Botones de acción ────────────────────────────────────
+      const btnFijo   = document.getElementById('inv-botones-fijo');
+      const btnInsumo = document.getElementById('inv-botones-insumo');
+      if (btnFijo && btnInsumo) {
+        if (esConsumible) {
+          btnFijo.classList.add('hidden');
+          btnInsumo.classList.remove('hidden');
+        } else {
+          btnInsumo.classList.add('hidden');
+          btnFijo.classList.remove('hidden');
+        }
+      }
+
+      // ── Timeline ─────────────────────────────────────────────
+      this._renderTimeline(historial);
     },
 
-    dibujarTimeline: function(historial) {
-      const box = document.getElementById('timeline-inv-movimientos');
+    _mostrarBoxFecha: function(boxId, valId, fecha) {
+      const box = document.getElementById(boxId);
       if (!box) return;
+      if (fecha) {
+        box.classList.remove('hidden');
+        document.getElementById(valId).innerText = fecha.split('T')[0];
+      } else {
+        box.classList.add('hidden');
+      }
+    },
+
+    _renderFlags: function(a) {
+      const container = document.getElementById('ficha-inv-flags');
+      if (!container) return;
+
+      const flags = [
+        {
+          label: 'Coincide con SUAF',
+          estado: a.coincide_con_suaf ? 'on' : 'warn',
+          dot: a.coincide_con_suaf,
+          texto: a.coincide_con_suaf ? 'Verificado' : 'Sin verificar'
+        },
+        {
+          label: 'En Oficina',
+          estado: a.en_oficina ? 'on' : 'off',
+          dot: a.en_oficina,
+          texto: a.en_oficina ? 'Confirmado' : 'No confirmado'
+        },
+        {
+          label: 'Devuelto',
+          estado: a.devuelto ? 'on' : 'off',
+          dot: a.devuelto,
+          texto: a.devuelto ? 'Sí' : 'No'
+        },
+        {
+          label: 'Dado de baja',
+          estado: a.dado_de_baja ? 'warn' : 'off',
+          dot: !a.dado_de_baja,
+          texto: a.dado_de_baja ? '⚠ Dado de baja' : 'Activo'
+        },
+        {
+          label: 'Pendiente baja',
+          estado: a.dar_baja ? 'alert' : 'off',
+          dot: !a.dar_baja,
+          texto: a.dar_baja ? 'Pendiente' : 'Normal'
+        }
+      ];
+
+      container.innerHTML = flags.map(f => `
+        <div class="inv-flag-chip ${f.estado}">
+          <div class="inv-flag-dot"></div>
+          <div>
+            <div style="font-size:0.65rem; opacity:0.7; text-transform:uppercase;">${f.label}</div>
+            <div>${f.texto}</div>
+          </div>
+        </div>`).join('');
+    },
+
+    _renderTimeline: function(historial) {
+      const container = document.getElementById('timeline-inv-movimientos');
+      if (!container) return;
 
       if (!historial || historial.length === 0) {
-        box.innerHTML = `
-          <div style="text-align:center; padding:20px; color:var(--text-muted);">
-            <i class="fas fa-box-open fa-2x" style="opacity:0.3; margin-bottom:10px;"></i>
-            <p>Sin movimientos registrados.</p>
+        container.innerHTML = `
+          <div style="text-align:center; padding:30px; color:var(--text-muted);">
+            <i class="fas fa-history fa-2x" style="opacity:0.2; margin-bottom:10px;"></i>
+            <p style="font-size:0.85rem;">Sin movimientos registrados.</p>
           </div>`;
         return;
       }
 
-      box.innerHTML = historial.map(m => {
-        let icono = 'fa-exchange-alt';
-        let color = 'var(--primary)';
-
-        if (m.tipo_movimiento.includes('Alta'))       { icono = 'fa-plus-circle';  color = 'var(--success)'; }
-        if (m.tipo_movimiento.includes('Baja'))       { icono = 'fa-trash-alt';    color = 'var(--danger)';  }
-        if (m.tipo_movimiento.includes('Reparac'))    { icono = 'fa-tools';        color = 'var(--warning)'; }
-        if (m.tipo_movimiento.includes('Entrega') ||
-            m.tipo_movimiento.includes('Consumo'))    { icono = 'fa-box-open';     color = 'var(--warning)'; }
+      container.innerHTML = historial.map(m => {
+        const { icono, color } = this._iconoYColorTipo(m.tipo_movimiento);
 
         const detallesHTML = [
-          m.edificio_destino  ? `<span class="tm-badge-route"><i class="fas fa-building"></i> ${m.edificio_destino}</span>`  : '',
-          m.agente_destino    ? `<span class="tm-badge-route"><i class="fas fa-user-tie"></i> ${m.agente_destino}</span>`    : '',
-          m.cantidad > 1      ? `<span class="tm-badge-route"><i class="fas fa-cubes"></i> ×${m.cantidad}</span>`            : ''
+          m.area_destino     ? `<span class="tm-badge-route"><i class="fas fa-sitemap"></i> ${m.area_destino}</span>` : '',
+          m.edificio_destino ? `<span class="tm-badge-route"><i class="fas fa-building"></i> ${m.edificio_destino}</span>` : '',
+          m.agente_destino   ? `<span class="tm-badge-route"><i class="fas fa-user-tie"></i> ${m.agente_destino}</span>` : '',
+          m.cantidad > 1     ? `<span class="tm-badge-route"><i class="fas fa-cubes"></i> ×${m.cantidad}</span>` : ''
         ].filter(Boolean).join('');
 
         return `
           <div class="tl-item">
             <div class="tl-dot" style="background:${color};"></div>
             <div class="tl-content">
-              <div style="display:flex; justify-content:space-between; align-items:center;
-                          margin-bottom:8px;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
                 <span style="font-size:0.8rem; font-weight:700; color:${color};">
                   <i class="fas ${icono}"></i> ${m.tipo_movimiento}
                 </span>
@@ -142,21 +284,39 @@
                 </span>
               </div>
               ${detallesHTML
-                ? `<div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px;">
-                     ${detallesHTML}
-                   </div>`
+                ? `<div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px;">${detallesHTML}</div>`
                 : ''}
               <div style="font-size:0.85rem; color:var(--text-main); margin-top:6px; line-height:1.5;">
                 ${m.observaciones || '<span style="opacity:0.5; font-style:italic;">Sin observaciones</span>'}
               </div>
               <div style="font-size:0.7rem; color:var(--text-muted); margin-top:10px; font-weight:600;">
-                <i class="fas fa-pencil-alt"></i> Registrado por: ${m.registrado_por}
+                <i class="fas fa-pencil-alt"></i> Registrado por: ${m.registrado_por || '—'}
               </div>
             </div>
           </div>`;
       }).join('');
     },
 
+    // =========================================================
+    // MODAL DE MOVIMIENTO — tipos resueltos dinámicamente
+    // =========================================================
+
+    /**
+     * Abre el modal de movimiento configurando los campos según la acción.
+     * 
+     * IMPORTANTE: los tipo_movimiento_id se resuelven buscando el nombre
+     * en cache.tipos_movimiento, nunca hardcodeados. Si la DB cambia los
+     * IDs (migración, reset de secuencia), el frontend sigue funcionando.
+     *
+     * Mapa de nombres buscados → tipos esperados en la DB:
+     *   'Alta'        → tipo_movimiento_id = 1 (Alta de insumos)
+     *   'Traslado'    → tipo_movimiento_id = 2
+     *   'Reparación'  → tipo_movimiento_id = 3
+     *   'Asignación'  → tipo_movimiento_id = 4
+     *   'Consumo'     → tipo_movimiento_id = 5
+     *   'Baja'        → tipo_movimiento_id = 6
+     *   'Foto'        → tipo_movimiento_id = 7
+     */
     abrirModalMovimiento: function(accion) {
       document.getElementById('modal-inv-obs').value = '';
       document.getElementById('modal-inv-cantidad').value = 1;
@@ -165,59 +325,103 @@
        'modal-inv-box-destino',
        'modal-inv-box-responsable',
        'modal-inv-box-baja'].forEach(id => {
-        document.getElementById(id).classList.add('hidden');
+        const el = document.getElementById(id);
+        if (el) el.classList.add('hidden');
       });
 
       const title      = document.getElementById('modal-inv-title');
       const tipoHidden = document.getElementById('modal-inv-tipo');
 
+      // Resolver el ID del tipo desde la caché — sin números mágicos
+      let tipoNombreBusqueda = accion; // 'Traslado', 'Reparacion', 'Consumo', 'Baja'
+      // Normalizar el string de búsqueda para que coincida con nombres en DB
+      if (accion === 'Reparacion') tipoNombreBusqueda = 'Reparaci'; // cubre 'Reparación'
+      if (accion === 'Traslado')   tipoNombreBusqueda = 'Traslado';
+      if (accion === 'Consumo')    tipoNombreBusqueda = 'Consumo';
+      if (accion === 'Baja')       tipoNombreBusqueda = 'Baja';
+
+      const tipoId = this._resolverTipoMov(tipoNombreBusqueda);
+      if (tipoId === null) {
+        Portal_Core.mostrarToast(
+          'error', 'Error de Configuración',
+          `No se encontró el tipo de movimiento "${accion}" en la base de datos. Verificá los catálogos.`
+        );
+        return;
+      }
+      tipoHidden.value = String(tipoId);
+
+      // Configurar UI según acción
       if (accion === 'Traslado') {
-        title.innerHTML   = '<i class="fas fa-people-carry" style="color:var(--primary)"></i> Asignar / Trasladar';
-        tipoHidden.value  = '4';
+        title.innerHTML = '<i class="fas fa-people-carry" style="color:var(--primary)"></i> Asignar / Trasladar';
         document.getElementById('modal-inv-box-destino').classList.remove('hidden');
         document.getElementById('modal-inv-box-responsable').classList.remove('hidden');
         this._cargarSelectoresMovimiento();
 
       } else if (accion === 'Consumo') {
-        title.innerHTML  = '<i class="fas fa-box-open" style="color:var(--warning)"></i> Descontar Insumo';
-        tipoHidden.value = '5';
+        title.innerHTML = '<i class="fas fa-box-open" style="color:var(--warning)"></i> Descontar Insumo';
         document.getElementById('modal-inv-box-cantidad').classList.remove('hidden');
         document.getElementById('modal-inv-box-responsable').classList.remove('hidden');
-        document.getElementById('modal-inv-cantidad').max = this.estadoActual.activo.stock_actual;
+        const maxStock = this.estadoActual && this.estadoActual.activo
+          ? (this.estadoActual.activo.stock_actual || 1) : 1;
+        document.getElementById('modal-inv-cantidad').max = maxStock;
         this._cargarSelectoresMovimiento(true);
 
       } else if (accion === 'Baja') {
-        title.innerHTML  = '<i class="fas fa-trash-alt" style="color:var(--danger)"></i> Dar de Baja';
-        tipoHidden.value = '6';
+        title.innerHTML = '<i class="fas fa-trash-alt" style="color:var(--danger)"></i> Dar de Baja';
         document.getElementById('modal-inv-box-baja').classList.remove('hidden');
 
       } else if (accion === 'Reparacion') {
-        title.innerHTML  = '<i class="fas fa-tools" style="color:var(--warning)"></i> Enviar a Reparación';
-        tipoHidden.value = '4';
+        title.innerHTML = '<i class="fas fa-tools" style="color:var(--warning)"></i> Enviar a Reparación';
+        document.getElementById('modal-inv-box-destino').classList.remove('hidden');
+        this._cargarSelectoresMovimiento();
       }
 
       Portal_Core.abrirModal('modal-inv-movimiento');
     },
 
+    // =========================================================
+    // GUARDAR MOVIMIENTO
+    // =========================================================
     guardarMovimiento: async function() {
       const tipoId = document.getElementById('modal-inv-tipo').value;
-      const obs    = document.getElementById('modal-inv-obs').value.trim();
+      if (!tipoId) {
+        return Portal_Core.mostrarToast('error', 'Error interno', 'Tipo de movimiento no definido.');
+      }
+
+      const obs = document.getElementById('modal-inv-obs').value.trim();
 
       const payload = {
-        activo_id:           this.estadoActual.idQR,
-        tipo_movimiento_id:  parseInt(tipoId),
-        agente_registro_id:  window.USUARIO_ACTUAL.idAgente,
-        observaciones:       obs
+        activo_id:          this.estadoActual.idQR,
+        tipo_movimiento_id: parseInt(tipoId),
+        agente_registro_id: window.USUARIO_ACTUAL.idAgente,
+        observaciones:      obs
       };
 
-      if (tipoId === '4' || tipoId === '2') {
-        payload.edificio_destino_id = parseInt(document.getElementById('modal-inv-edificio').value);
-        payload.agente_destino_id   = document.getElementById('modal-inv-responsable').value;
-      } else if (tipoId === '5') {
-        payload.cantidad            = parseInt(document.getElementById('modal-inv-cantidad').value);
-        payload.agente_destino_id   = document.getElementById('modal-inv-responsable').value;
-      } else if (tipoId === '6') {
-        payload.motivo_baja = document.getElementById('modal-inv-motivo-baja').value;
+      // Resolver nombres de tipos para la lógica de payload
+      // (sin comparar contra números hardcodeados)
+      const cache          = Memoria.leer('diccionariosINV') || {};
+      const tiposMap       = {};
+      (cache.tipos_movimiento || []).forEach(t => { tiposMap[t.id] = t.nombre.toLowerCase(); });
+      const nombreTipoActual = tiposMap[parseInt(tipoId)] || '';
+
+      if (nombreTipoActual.includes('traslado') || nombreTipoActual.includes('asignaci') || nombreTipoActual.includes('reparaci')) {
+        const edificioEl = document.getElementById('modal-inv-edificio');
+        if (edificioEl && edificioEl.value) {
+          payload.edificio_destino_id = parseInt(edificioEl.value);
+        }
+        const respEl = document.getElementById('modal-inv-responsable');
+        if (respEl && respEl.value) {
+          payload.agente_destino_id = respEl.value;
+        }
+
+      } else if (nombreTipoActual.includes('consumo')) {
+        payload.cantidad = parseInt(document.getElementById('modal-inv-cantidad').value) || 1;
+        const respEl = document.getElementById('modal-inv-responsable');
+        if (respEl && respEl.value) payload.agente_destino_id = respEl.value;
+
+      } else if (nombreTipoActual.includes('baja')) {
+        const motivoEl = document.getElementById('modal-inv-motivo-baja');
+        payload.motivo_baja = motivoEl ? motivoEl.value : '';
         if (!payload.motivo_baja) {
           return Portal_Core.mostrarToast('warning', 'Dato Requerido', 'Indique el motivo de la baja.');
         }
@@ -231,12 +435,13 @@
         const res = await Portal_Core.ejecutarBackend('registrarMovimientoInventarioBackend', payload);
         btn.disabled = false;
         btn.innerHTML = '<i class="fas fa-save"></i> Confirmar';
-        if (res.success) {
+
+        if (res && res.success) {
           Portal_Core.cerrarModal('modal-inv-movimiento');
           Portal_Core.mostrarToast('success', 'Guardado', 'Movimiento registrado correctamente.');
           this.iniciarFicha(this.estadoActual.idQR);
         } else {
-          Portal_Core.mostrarToast('error', 'Error DB', res.message);
+          Portal_Core.mostrarToast('error', 'Error BD', res ? res.message : 'Sin respuesta.');
         }
       } catch (err) {
         btn.disabled = false;
@@ -245,28 +450,58 @@
       }
     },
 
+    // =========================================================
+    // HINT DE EDIFICIO EN EL MODAL
+    // =========================================================
+    actualizarHintEdificio: function(selectId, hintId) {
+      const select  = document.getElementById(selectId);
+      const hintEl  = document.getElementById(hintId);
+      if (!select || !hintEl) return;
+
+      const idSeleccionado = parseInt(select.value);
+      if (!idSeleccionado) { hintEl.innerHTML = ''; return; }
+
+      const cache     = Memoria.leer('diccionariosINV') || {};
+      const edificio  = (cache.edificios || []).find(e => e.id === idSeleccionado);
+      if (!edificio)  { hintEl.innerHTML = ''; return; }
+
+      hintEl.innerHTML = `<i class="fas fa-map-marker-alt"></i> ${edificio.direccion || ''} ${edificio.piso ? '— Piso: ' + edificio.piso : ''}`;
+    },
+
+    // =========================================================
+    // CARGAR SELECTORES DEL MODAL
+    // =========================================================
     _cargarSelectoresMovimiento: function(soloAgentes = false) {
       const cache = Memoria.leer('diccionariosINV');
       if (!cache) return;
+
       if (!soloAgentes) {
         const elEdif = document.getElementById('modal-inv-edificio');
         if (elEdif) {
           elEdif.innerHTML = '<option value="">Seleccione edificio...</option>' +
             (cache.edificios || []).map(e => `<option value="${e.id}">${e.nombre}</option>`).join('');
+          // Disparar hint inicial
+          this.actualizarHintEdificio('modal-inv-edificio', 'modal-inv-edificio-hint');
         }
       }
+
       const elResp = document.getElementById('modal-inv-responsable');
       if (elResp) {
-        elResp.innerHTML = '<option value="">Seleccione agente...</option>' +
-          (cache.agentes || []).map(a => `<option value="${a.id}">${a.apellido}, ${a.nombre}</option>`).join('');
+        elResp.innerHTML = '<option value="">Seleccione agente (opcional)...</option>' +
+          (cache.agentes || []).map(a =>
+            `<option value="${a.id}">${a.apellido}, ${a.nombre}</option>`
+          ).join('');
       }
     },
 
+    // =========================================================
+    // FOTO EVIDENCIA
+    // =========================================================
     procesarFotoEvidencia: function(input) {
       if (!input.files || !input.files[0]) return;
 
-      const archivo    = input.files[0];
-      const maxBytes   = 5 * 1024 * 1024; // 5 MB
+      const archivo  = input.files[0];
+      const maxBytes = 5 * 1024 * 1024; // 5 MB
 
       if (archivo.size > maxBytes) {
         Portal_Core.mostrarToast('warning', 'Archivo muy grande',
@@ -275,39 +510,37 @@
         return;
       }
 
-      Portal_Core.mostrarToast('info', 'Subiendo foto...', 'Procesando imagen, un momento.', 10000, false);
+      Portal_Core.mostrarToast('info', 'Subiendo foto...', 'Procesando imagen, un momento.');
 
       const reader = new FileReader();
       reader.onload = async (e) => {
         const base64Full = e.target.result;
-        const partes     = base64Full.split(',');
-        const mimeType   = partes[0].split(':')[1].split(';')[0];
-        const base64Data = partes[1];
-
-        const payload = {
-          activo_id:      this.estadoActual.idQR,
-          agente_id:      window.USUARIO_ACTUAL.idAgente,
-          base64_data:    base64Data,
-          mime_type:      mimeType,
-          nombre_archivo: archivo.name
-        };
+        const [meta, base64Data] = base64Full.split(',');
+        const mimeMatch = meta.match(/:(.*?);/);
+        const mimeType  = mimeMatch ? mimeMatch[1] : 'image/jpeg';
 
         try {
-          const res = await Portal_Core.ejecutarBackend('subirFotoEvidenciaBackend', payload);
-          input.value = '';
-          if (res.success) {
-            Portal_Core.mostrarToast('success', 'Foto adjuntada',
-              'La evidencia fotográfica fue guardada correctamente.');
+          const res = await Portal_Core.ejecutarBackend('subirFotoEvidenciaBackend', {
+            activo_id:      this.estadoActual.idQR,
+            base64_data:    base64Data,
+            mime_type:      mimeType,
+            nombre_archivo: archivo.name,
+            agente_id:      window.USUARIO_ACTUAL.idAgente
+          });
+
+          if (res && res.success) {
+            Portal_Core.mostrarToast('success', 'Foto Adjuntada',
+              'La evidencia se guardó correctamente en Drive.');
             this.iniciarFicha(this.estadoActual.idQR);
           } else {
-            Portal_Core.mostrarToast('error', 'Error al subir', res.message);
+            Portal_Core.mostrarToast('error', 'Error al subir',
+              res ? res.message : 'Sin respuesta del servidor.');
           }
         } catch (err) {
-          input.value = '';
-          Portal_Core.mostrarToast('error', 'Fallo de Red', err.message);
+          Portal_Core.mostrarToast('error', 'Error de Red', err.message);
         }
+        input.value = '';
       };
-
       reader.readAsDataURL(archivo);
     }
 

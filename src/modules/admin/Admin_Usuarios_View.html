@@ -1,43 +1,111 @@
-<div class="fade-in">
+<style>
+  /* ── STATS ROW ── */
+  .usr-stats-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+  .usr-stat-card { background: var(--bg-surface); border: 1px solid var(--border-soft); border-radius: 12px; padding: 12px 16px; display: flex; align-items: center; gap: 12px; box-shadow: var(--shadow-sm); }
+  .usr-stat-icon { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 1.1rem; }
+  .usr-stat-icon.p { background: var(--primary-light); color: var(--primary); }
+  .usr-stat-icon.g { background: #EAF3DE; color: #3B6D11; }
+  .usr-stat-icon.a { background: #FAEEDA; color: #854F0B; }
+  .usr-stat-label { font-size: 0.7rem; color: var(--text-muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
+  .usr-stat-val   { font-size: 1.3rem; font-weight: 800; color: var(--text-main); line-height: 1.1; }
 
-  <div class="header-bandeja" style="margin-bottom: 20px;">
-    <div>
-      <h2 style="font-size: 1.75rem; font-weight: 800; color: var(--text-main); letter-spacing: -0.02em;">Gestión de Accesos</h2>
-      <p style="color: var(--text-muted); font-size: 0.95rem; margin-top: 4px;">Administración de usuarios y permisos del sistema</p>
-    </div>
-    <div class="search-box">
-      <i class="fas fa-search"></i>
-      <input type="text" id="usr-busqueda" placeholder="Buscar por Nombre o Usuario..." oninput="AdminUsuarios._filtrarLocal()">
-    </div>
+  /* ── ACTION BAR (Búsqueda + Panel Toggle + Nuevo) ── */
+  .usr-action-bar { display: flex; gap: 12px; margin-bottom: 15px; align-items: center; flex-wrap: wrap; justify-content: space-between; }
+  .usr-search-container { display: flex; flex: 1; min-width: 280px; gap: 8px; }
+  .usr-search-input { flex: 1; position: relative; min-width: 0;}
+  .usr-search-input input { width: 100%; padding: 10px 10px 10px 38px; border: 1.5px solid var(--border-soft); border-radius: 10px; outline: none; transition: 0.2s; font-size: 0.95rem; font-weight: 500; background: var(--bg-surface); color: var(--text-main); }
+  .usr-search-input input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-light); }
+  .usr-search-input i { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--text-muted); }
+  
+  /* ── PANEL DE ESTADÍSTICAS COLAPSABLE ── */
+  .usr-filter-panel { background: var(--bg-surface); border: 1px solid var(--border-soft); border-radius: 12px; padding: 20px; margin-bottom: 20px; display: none; box-shadow: var(--shadow-sm); }
+  .usr-filter-panel.open { display: block; animation: fadeIn 0.3s ease; }
+
+  /* ── RESPONSIVE MOBILE ── */
+  @media (max-width: 768px) {
+    .usr-action-bar { flex-direction: column; align-items: stretch; }
+    .usr-search-container { flex-wrap: nowrap; width: 100%; }
+    .usr-btn-text { display: none; }
+    .btn-mobile-grow { flex: 0 0 auto; padding: 10px 14px; }
+    .btn-mobile-full { width: 100%; justify-content: center; }
+  }
+
+  /* ── TABS Y PERMISOS ── */
+  .usr-tab-nav { display:flex; gap:2px; border-bottom:1px solid var(--border-soft); margin-bottom:1.1rem; }
+  .usr-tab-btn { padding:7px 16px; border:none; background:transparent; cursor:pointer; font-size:0.85rem; font-weight:700; color:var(--text-muted); border-bottom:3px solid transparent; margin-bottom:-2px; transition:0.15s; text-transform: uppercase;}
+  .usr-tab-btn.active { color:var(--primary); border-bottom-color:var(--primary); }
+  .usr-tab-panel { display:none; }
+  .usr-tab-panel.active { display:block; }
+
+  .perm-group { border-bottom:1px solid var(--border-soft); }
+  .perm-group:last-child { border-bottom:none; }
+  .perm-group-hdr { display:grid; grid-template-columns:1fr auto auto; align-items:center; gap:8px; padding:12px 16px; background:var(--bg-app); cursor:pointer; user-select:none; transition: 0.2s;}
+  .perm-group-hdr:hover { background:var(--primary-light); }
+  .perm-group-title { font-size:0.85rem; font-weight:800; color:var(--text-main); display:flex; align-items:center; gap:8px; }
+  .perm-group-dot { width:10px; height:10px; border-radius:4px; flex-shrink:0; }
+  .perm-group-count { font-size:0.75rem; color:var(--text-muted); font-weight:700; white-space:nowrap; background: white; padding: 2px 8px; border-radius: 12px; border: 1px solid var(--border-soft);}
+  .perm-group-toggle { font-size:0.7rem; color:var(--primary); background:white; border:1px solid var(--primary); cursor:pointer; font-weight:800; padding:4px 8px; border-radius:6px; white-space:nowrap; transition: 0.2s; text-transform: uppercase;}
+  .perm-group-toggle:hover { background:var(--primary); color: white; }
+  .perm-group-body { padding:8px 0; }
+  .perm-item { display:grid; grid-template-columns:30px 150px 1fr; align-items:center; gap:5px; padding:8px 16px; cursor:pointer; transition:background 0.15s; }
+  .perm-item:hover { background:var(--bg-app); }
+  .perm-item input[type=checkbox] { width:16px; height:16px; accent-color:var(--primary); cursor:pointer; justify-self:center; }
+  .perm-code { font-size:0.75rem; font-weight:800; color:var(--primary); font-family:monospace; padding-right:8px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .perm-desc { font-size:0.8rem; color:var(--text-muted); font-weight: 500;}
+</style>
+
+<div class="fade-in" style="padding: 16px; max-width: 1100px; margin: 0 auto; padding-bottom: 60px;">
+
+  <div style="margin-bottom: 20px;">
+    <h2 style="font-size: 1.75rem; font-weight: 800; color: var(--text-main); letter-spacing: -0.02em;">Gestión de Accesos</h2>
+    <p style="color: var(--text-muted); font-size: 0.95rem; margin-top: 4px;">Administración de usuarios y permisos del sistema</p>
   </div>
 
-  <div class="ficha-card" style="margin-bottom: 25px; padding: 20px; border-top: 4px solid var(--primary);">
-    <div style="font-size: 0.85rem; font-weight: 800; color: var(--text-main); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 18px; display: flex; justify-content: space-between; align-items: center;">
-      <span><i class="fas fa-chart-pie" style="color: var(--primary); margin-right: 6px;"></i> Estadísticas Generales</span>
-      <button class="btn btn-primary" onclick="AdminUsuarios.abrirModalCrear()">
-        <i class="fas fa-user-plus" style="margin-right:5px;"></i> Nuevo Usuario
+  <div class="usr-action-bar">
+    <div class="usr-search-container">
+      <div class="usr-search-input">
+        <i class="fas fa-search"></i>
+        <input type="text" id="usr-busqueda" placeholder="Buscar por Nombre, DNI o Usuario..." oninput="AdminUsuarios._filtrarLocal()">
+      </div>
+      <button class="btn btn-outline btn-mobile-grow" onclick="AdminUsuarios.toggleFiltrosPanel()" id="btn-toggle-filtros-usr" title="Mostrar Estadísticas">
+        <i class="fas fa-chart-pie"></i> <span class="usr-btn-text">Métricas</span>
+      </button>
+    </div>
+    
+    <button class="btn btn-primary btn-mobile-full" onclick="AdminUsuarios.abrirModalCrear()" style="padding: 10px 20px; box-shadow: var(--shadow-md); white-space: nowrap;">
+      <i class="fas fa-user-plus"></i> <span style="margin-left: 5px;">Nuevo Usuario</span>
+    </button>
+  </div>
+
+  <div id="adm-usr-filtros-panel" class="usr-filter-panel">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+      <span style="font-weight: 800; color: var(--text-main); font-size: 0.95rem;">
+        <i class="fas fa-chart-line" style="color: var(--primary); margin-right: 6px;"></i> Estadísticas Generales
+      </span>
+      <button class="btn btn-outline" style="padding: 6px 12px; font-size: 0.75rem;" onclick="AdminUsuarios.limpiarFiltros()">
+        <i class="fas fa-eraser"></i> Limpiar Búsqueda
       </button>
     </div>
 
-    <div style="display: flex; gap: 25px; border-top: 1px solid var(--border-soft); padding-top: 15px; flex-wrap: wrap;">
-       <div style="display: flex; align-items: center; gap: 10px;">
-         <div style="width: 38px; height: 38px; border-radius: 8px; background: var(--primary-light); color: var(--primary); display: flex; align-items: center; justify-content: center;"><i class="fas fa-users"></i></div>
-         <div><div style="font-size: 0.7rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Total</div><div id="usr-stat-total" style="font-weight: 800; font-size: 1.1rem; color: var(--text-main);">0</div></div>
-       </div>
-       <div style="display: flex; align-items: center; gap: 10px;">
-         <div style="width: 38px; height: 38px; border-radius: 8px; background: #EAF3DE; color: #3B6D11; display: flex; align-items: center; justify-content: center;"><i class="fas fa-user-check"></i></div>
-         <div><div style="font-size: 0.7rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Activos</div><div id="usr-stat-activos" style="font-weight: 800; font-size: 1.1rem; color: var(--text-main);">0</div></div>
-       </div>
-       <div style="display: flex; align-items: center; gap: 10px;">
-         <div style="width: 38px; height: 38px; border-radius: 8px; background: #FAEEDA; color: #854F0B; display: flex; align-items: center; justify-content: center;"><i class="fas fa-key"></i></div>
-         <div><div style="font-size: 0.7rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Admins / Sistemas</div><div id="usr-stat-sistemas" style="font-weight: 800; font-size: 1.1rem; color: var(--text-main);">0</div></div>
-       </div>
+    <div class="usr-stats-row">
+      <div class="usr-stat-card">
+        <div class="usr-stat-icon p"><i class="fas fa-users"></i></div>
+        <div><div class="usr-stat-label">Total Cuentas</div><div class="usr-stat-val" id="usr-stat-total">0</div></div>
+      </div>
+      <div class="usr-stat-card">
+        <div class="usr-stat-icon g"><i class="fas fa-user-check"></i></div>
+        <div><div class="usr-stat-label">Activos</div><div class="usr-stat-val" id="usr-stat-activos">0</div></div>
+      </div>
+      <div class="usr-stat-card">
+        <div class="usr-stat-icon a"><i class="fas fa-key"></i></div>
+        <div><div class="usr-stat-label">Admins / Sistemas</div><div class="usr-stat-val" id="usr-stat-sistemas">0</div></div>
+      </div>
     </div>
   </div>
 
-  <div id="admin-usr-loader" style="text-align:center; padding:40px;">
+  <div id="admin-usr-loader" style="text-align:center; padding:50px;">
     <i class="fas fa-circle-notch spinner fa-3x" style="color:var(--primary);"></i>
-    <p style="margin-top:15px; color:var(--text-muted); font-weight: 500;">Sincronizando usuarios...</p>
+    <p style="margin-top:15px; color:var(--text-muted); font-weight: 500;">Sincronizando cuentas...</p>
   </div>
   
   <div id="admin-usr-tabla" class="hidden">
@@ -52,9 +120,9 @@
       <button class="btn-icono" style="border:none; background: var(--bg-surface);" onclick="Portal_Core.cerrarModal('modal-crear-usuario')"><i class="fas fa-times"></i></button>
     </div>
 
-    <div class="tabs" style="margin-bottom: 20px;">
-      <button class="tab-btn usr-tab-btn active" onclick="AdminUsuarios._tabCrear(0)">Paso 1: Datos</button>
-      <button class="tab-btn usr-tab-btn" onclick="AdminUsuarios._tabCrear(1)">Paso 2: Permisos</button>
+    <div class="usr-tab-nav">
+      <button class="usr-tab-btn active" onclick="AdminUsuarios._tabCrear(0)">Paso 1: Datos</button>
+      <button class="usr-tab-btn" onclick="AdminUsuarios._tabCrear(1)">Paso 2: Permisos</button>
     </div>
 
     <div class="usr-tab-panel active" id="crear-tab-0">
@@ -185,22 +253,3 @@
     </div>
   </div>
 </div>
-
-<style>
-  .perm-group { border-bottom:1px solid var(--border-soft); }
-  .perm-group:last-child { border-bottom:none; }
-  .perm-group-hdr { display:grid; grid-template-columns:1fr auto auto; align-items:center; gap:8px; padding:12px 16px; background:var(--bg-app); cursor:pointer; user-select:none; transition: 0.2s;}
-  .perm-group-hdr:hover { background:var(--primary-light); }
-  .perm-group-title { font-size:0.85rem; font-weight:800; color:var(--text-main); display:flex; align-items:center; gap:8px; }
-  .perm-group-dot { width:10px; height:10px; border-radius:4px; flex-shrink:0; }
-  .perm-group-count { font-size:0.75rem; color:var(--text-muted); font-weight:700; white-space:nowrap; background: white; padding: 2px 8px; border-radius: 12px; border: 1px solid var(--border-soft);}
-  .perm-group-toggle { font-size:0.7rem; color:var(--primary); background:white; border:1px solid var(--primary); cursor:pointer; font-weight:800; padding:4px 8px; border-radius:6px; white-space:nowrap; transition: 0.2s; text-transform: uppercase;}
-  .perm-group-toggle:hover { background:var(--primary); color: white; }
-  .perm-group-body { padding:8px 0; }
-
-  .perm-item { display:grid; grid-template-columns:30px 150px 1fr; align-items:center; gap:5px; padding:8px 16px; cursor:pointer; transition:background 0.15s; }
-  .perm-item:hover { background:var(--bg-app); }
-  .perm-item input[type=checkbox] { width:16px; height:16px; accent-color:var(--primary); cursor:pointer; justify-self:center; }
-  .perm-code { font-size:0.75rem; font-weight:800; color:var(--primary); font-family:monospace; padding-right:8px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .perm-desc { font-size:0.8rem; color:var(--text-muted); font-weight: 500;}
-</style>

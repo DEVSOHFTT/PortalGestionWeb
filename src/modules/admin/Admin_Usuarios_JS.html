@@ -119,6 +119,26 @@
       this.cargarUsuarios();
     },
 
+    toggleFiltrosPanel: function() {
+      const panel = document.getElementById('adm-usr-filtros-panel');
+      const btn = document.getElementById('btn-toggle-filtros-usr');
+      if (!panel || !btn) return;
+      
+      const isOpen = panel.classList.toggle('open');
+      if (isOpen) {
+        btn.classList.add('btn-primary');
+        btn.classList.remove('btn-outline');
+      } else {
+        btn.classList.add('btn-outline');
+        btn.classList.remove('btn-primary');
+      }
+    },
+
+    limpiarFiltros: function() {
+      document.getElementById('usr-busqueda').value = '';
+      this._filtrarLocal();
+    },
+
     cargarUsuarios: async function() {
       const loader = document.getElementById('admin-usr-loader');
       const tabla  = document.getElementById('admin-usr-tabla');
@@ -146,9 +166,6 @@
       this.renderizarTabla(lista);
     },
 
-    // =========================================================
-    // RENDERIZADO VISUAL ESPACIOSO (IDÉNTICO A AGENTES)
-    // =========================================================
     renderizarTabla: function(usuarios) {
       const TIPOS   = { 1:'Sistemas', 2:'Administrador', 3:'Supervisor', 4:'Operador', 5:'Consulta' };
       const COLORES = { 1:'#7c3aed', 2:'#2563eb', 3:'#059669', 4:'#d97706', 5:'#6b7280' };
@@ -168,7 +185,7 @@
           <div style="text-align:center; padding:80px 40px; color:var(--text-muted); background:var(--bg-surface); border-radius:var(--radius-lg); border:1px dashed var(--border-hard);">
             <i class="fas fa-users-slash fa-3x" style="opacity:0.15; margin-bottom:16px;"></i>
             <p style="font-weight:700; font-size:1rem; margin-bottom:4px; color:var(--text-main);">Sin resultados</p>
-            <p style="font-size:0.85rem;">No se encontraron usuarios con ese nombre.</p>
+            <p style="font-size:0.85rem;">No se encontraron usuarios con esos parámetros.</p>
           </div>`;
         return;
       }
@@ -189,66 +206,78 @@
           return `
           <div class="card-caso" style="${!u.estado ? 'opacity:0.7;' : ''}">
             <div style="width:5px; flex-shrink:0; background:${cE};"></div>
-            <div style="flex:1; padding:16px 20px; display:grid; grid-template-columns:1fr auto; gap:10px 16px; align-items:start;">
-              
-              <div style="display:flex; align-items:center; gap:14px;">
-                <div style="width:46px; height:46px; border-radius:12px; flex-shrink:0; background:${color}18; color:${color}; display:flex; align-items:center; justify-content:center; font-size:1.1rem; font-weight:800;">
+            
+            <div class="tc-content">
+              <div class="tc-header">
+                <div class="tc-avatar" style="background:${color}18; color:${color};">
                   ${(u.apellido||'S')[0]}${(u.nombre||'D')[0]}
                 </div>
-                <div style="min-width:0;">
-                  <div style="font-weight:800; font-size:1.1rem; color:var(--text-main); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:flex; align-items:center; gap:8px; letter-spacing: -0.01em;">
+                <div class="tc-info">
+                  <div class="tc-title">
                     ${u.apellido||''}, ${u.nombre||''}
                   </div>
-                  <div style="font-size:0.85rem; color:var(--text-muted); display:flex; align-items:center; gap:6px; font-weight:600; margin-top: 2px;">
-                    <i class="far fa-id-badge" style="opacity:0.6;"></i> <span style="font-family: monospace;">${u.username}</span>
+                  <div class="tc-subtitle">
+                    <i class="far fa-id-badge"></i> <span style="font-family: monospace;">${u.username}</span>
                   </div>
                 </div>
               </div>
 
-              <div style="display:flex; align-items:center; gap:6px; justify-self:end; padding:6px 14px; border-radius:20px; font-size:0.75rem; font-weight:800; text-transform:uppercase; letter-spacing:0.5px; background:${bgE}; color:${cE}; white-space:nowrap; align-self:center;">
-                <i class="fas ${iE}" style="font-size:0.7rem;"></i> ${estadoKey}
+              <div class="tc-badge" style="background:${bgE}; color:${cE};">
+                <i class="fas ${iE}"></i> ${estadoKey}
               </div>
 
-              <div style="grid-column:1 / -1; display:flex; align-items:center; justify-content:space-between; border-top:1px dashed var(--border-soft); padding-top:14px; margin-top: 6px;">
-                <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
-                  <span style="font-size:0.8rem; font-weight:800; padding:6px 14px; border-radius:8px; background:${color}18; color:${color}; text-transform:uppercase; letter-spacing:0.5px; display:flex; align-items:center; gap:6px;">
+              <div class="tc-footer">
+                <div class="tc-tags">
+                  <span class="tc-tag" style="background:${color}18; color:${color};">
                     <i class="fas ${iconT}"></i> ${tipo}
                   </span>
-                  <span style="font-size:0.8rem; font-weight:600; color:var(--text-muted); display:flex; align-items:center; gap:6px; border-left: 1px solid var(--border-hard); padding-left: 12px;">
+                  <span class="tc-tag-text tc-border-left">
                     <i class="fas fa-key" style="color: var(--warning);"></i> ${permisos} permisos granulares
                   </span>
                 </div>
-                <div style="display:flex; gap:8px;">
-                  <button class="btn btn-outline btn-icono" style="width:36px; height:36px; background:var(--bg-surface); border-color:var(--border-hard);" onclick="AdminUsuarios.abrirEditar('${u.id}')" title="Modificar Permisos">
-                    <i class="fas fa-pencil-alt" style="color:var(--primary); font-size: 0.85rem;"></i>
+                <div class="tc-actions">
+                  <button class="btn btn-outline btn-icono" style="width:34px; height:34px;" onclick="AdminUsuarios.abrirEditar('${u.id}')" title="Modificar Permisos">
+                    <i class="fas fa-pencil-alt" style="color:var(--primary); font-size: 0.8rem;"></i>
                   </button>
-                  <button class="btn btn-outline btn-icono" style="width:36px; height:36px; background:var(--bg-surface); border-color:var(--border-hard);" onclick="AdminUsuarios.abrirResetPassword('${u.username}','${u.apellido}, ${u.nombre}')" title="Blanquear Contraseña">
-                    <i class="fas fa-key" style="color:var(--warning); font-size: 0.85rem;"></i>
+                  <button class="btn btn-outline btn-icono" style="width:34px; height:34px;" onclick="AdminUsuarios.abrirResetPassword('${u.username}','${u.apellido}, ${u.nombre}')" title="Blanquear Contraseña">
+                    <i class="fas fa-key" style="color:var(--warning); font-size: 0.8rem;"></i>
                   </button>
-                  <button class="btn btn-outline btn-icono" style="width:36px; height:36px; background:var(--bg-surface); border-color:var(--border-hard);" onclick="AdminUsuarios.${u.estado ? 'confirmarDesactivar' : 'confirmarReactivar'}('${u.id}','${u.apellido}, ${u.nombre}')" title="${u.estado ? 'Suspender Acceso' : 'Reactivar Acceso'}">
-                    <i class="fas ${u.estado ? 'fa-user-slash' : 'fa-user-check'}" style="color:${u.estado ? 'var(--danger)' : 'var(--success)'}; font-size: 0.85rem;"></i>
+                  <button class="btn btn-outline btn-icono" style="width:34px; height:34px;" onclick="AdminUsuarios.${u.estado ? 'confirmarDesactivar' : 'confirmarReactivar'}('${u.id}','${u.apellido}, ${u.nombre}')" title="${u.estado ? 'Suspender Acceso' : 'Reactivar Acceso'}">
+                    <i class="fas ${u.estado ? 'fa-user-slash' : 'fa-user-check'}" style="color:${u.estado ? 'var(--danger)' : 'var(--success)'}; font-size: 0.8rem;"></i>
                   </button>
                 </div>
               </div>
-
             </div>
+
           </div>`;
         }).join('');
     },
 
     _tabCrear: function(i) {
       document.querySelectorAll('#modal-crear-usuario .usr-tab-btn').forEach((b,idx) => b.classList.toggle('active', idx===i));
+      
       document.querySelectorAll('#modal-crear-usuario .usr-tab-panel').forEach((p,idx) => {
-        if (idx === i) p.classList.remove('hidden');
-        else p.classList.add('hidden');
+        if (idx === i) {
+          p.classList.remove('hidden');
+          p.classList.add('active'); // ← FIX APLICADO
+        } else {
+          p.classList.add('hidden');
+          p.classList.remove('active'); // ← FIX APLICADO
+        }
       });
     },
 
     _tabEditar: function(i) {
       document.querySelectorAll('#modal-editar-usuario .usr-tab-btn').forEach((b,idx) => b.classList.toggle('active', idx===i));
+      
       document.querySelectorAll('#modal-editar-usuario .usr-tab-panel').forEach((p,idx) => {
-        if (idx === i) p.classList.remove('hidden');
-        else p.classList.add('hidden');
+        if (idx === i) {
+          p.classList.remove('hidden');
+          p.classList.add('active'); // ← FIX APLICADO
+        } else {
+          p.classList.add('hidden');
+          p.classList.remove('active'); // ← FIX APLICADO
+        }
       });
     },
 

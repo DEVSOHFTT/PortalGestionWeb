@@ -1,53 +1,130 @@
-<div class="fade-in">
-  <div class="header-bandeja" style="margin-bottom: 20px;">
-    <div>
-      <h2 style="font-size: 1.75rem; font-weight: 800; color: var(--text-main); letter-spacing: -0.02em;">Gestión de Agentes</h2>
-      <p style="color: var(--text-muted); font-size: 0.95rem; margin-top: 4px;">Administración del personal de la institución</p>
-    </div>
-    <div class="search-box">
-      <i class="fas fa-search"></i>
-      <input type="text" id="adm-ag-busqueda" placeholder="Buscar por Apellido, Nombre o DNI..." oninput="AdminAgentes._filtrarLocal()">
-    </div>
+<style>
+  /* ── STATS ROW ── */
+  .adm-stats-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+  .adm-stat-card { background: var(--bg-surface); border: 1px solid var(--border-soft); border-radius: 12px; padding: 12px 16px; display: flex; align-items: center; gap: 12px; box-shadow: var(--shadow-sm); }
+  .adm-stat-icon { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 1rem; }
+  .adm-stat-icon.p { background: var(--primary-light); color: var(--primary); }
+  .adm-stat-icon.g { background: #EAF3DE; color: #3B6D11; }
+  .adm-stat-icon.r { background: #FCEBEB; color: #A32D2D; }
+  .adm-stat-label { font-size: 0.7rem; color: var(--text-muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
+  .adm-stat-val   { font-size: 1.3rem; font-weight: 800; color: var(--text-main); line-height: 1.1; }
+
+  /* ── ACTION BAR (Búsqueda + Panel Toggle + Nuevo) ── */
+  .adm-action-bar { display: flex; gap: 12px; margin-bottom: 15px; align-items: center; flex-wrap: wrap; justify-content: space-between; }
+  .adm-search-container { display: flex; flex: 1; min-width: 280px; gap: 8px; }
+  .adm-search-input { flex: 1; position: relative; min-width: 0; }
+  .adm-search-input input { width: 100%; padding: 10px 10px 10px 38px; border: 1.5px solid var(--border-soft); border-radius: 10px; outline: none; transition: 0.2s; font-size: 0.95rem; font-weight: 500; background: var(--bg-surface); color: var(--text-main); }
+  .adm-search-input input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-light); }
+  .adm-search-input i { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--text-muted); }
+  
+  /* ── PANEL DE FILTROS Y ESTADÍSTICAS COLAPSABLE ── */
+  .adm-filter-panel { background: var(--bg-surface); border: 1px solid var(--border-soft); border-radius: 12px; padding: 20px; margin-bottom: 20px; display: none; box-shadow: var(--shadow-sm); }
+  .adm-filter-panel.open { display: block; animation: fadeIn 0.3s ease; }
+  .adm-filter-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; align-items: end; }
+
+  /* ── CARD INTERNALS (Responsivo) ── */
+  .tc-content { flex: 1; padding: 14px 18px; display: grid; grid-template-columns: 1fr auto; gap: 8px 16px; align-items: start; }
+  .tc-header { display: flex; align-items: center; gap: 12px; min-width: 0; }
+  .tc-avatar { width: 40px; height: 40px; border-radius: 10px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 0.95rem; font-weight: 800; }
+  .tc-info { min-width: 0; }
+  .tc-title { font-weight: 800; font-size: 1.05rem; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 6px; letter-spacing: -0.01em; }
+  .tc-subtitle { font-size: 0.8rem; color: var(--text-muted); display: flex; align-items: center; gap: 4px; font-weight: 500; margin-top: 2px; }
+  .tc-badge { justify-self: end; padding: 5px 12px; border-radius: 20px; font-size: 0.72rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.3px; white-space: nowrap; align-self: center; display: flex; align-items: center; gap: 5px; }
+  .tc-footer { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; border-top: 1px dashed var(--border-soft); padding-top: 12px; margin-top: 4px; flex-wrap: wrap; gap: 10px; }
+  .tc-tags { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .tc-tag { font-size: 0.75rem; font-weight: 700; padding: 4px 12px; border-radius: 8px; text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 4px; }
+  .tc-tag-text { font-size: 0.75rem; font-weight: 600; color: var(--text-muted); display: flex; align-items: center; gap: 4px; }
+  .tc-border-left { border-left: 1px solid var(--border-hard); padding-left: 10px; }
+  .tc-actions { display: flex; gap: 6px; }
+
+  /* ── RESPONSIVE MOBILE ── */
+  @media (max-width: 768px) {
+    .adm-action-bar { flex-direction: column; align-items: stretch; }
+    .adm-search-container { flex-wrap: nowrap; width: 100%; } /* Mantiene el input y el boton panel en la misma linea */
+    .adm-btn-text { display: none; }
+    .btn-mobile-grow { flex: 0 0 auto; padding: 10px 14px; } /* Evita que el boton se estire */
+    .btn-mobile-full { width: 100%; justify-content: center; }
+    
+    /* Responsive Cards */
+    .tc-content { grid-template-columns: 1fr; gap: 12px; padding: 14px 16px; }
+    .tc-badge { justify-self: start; padding: 4px 10px; font-size: 0.65rem; }
+    .tc-title { white-space: normal; line-height: 1.2; }
+    .tc-footer { flex-direction: column; align-items: flex-start; gap: 12px; }
+    .tc-actions { width: 100%; justify-content: flex-end; padding-top: 8px; }
+    .tc-border-left { border-left: none; padding-left: 0; }
+  }
+
+  /* ── TABS DEL MODAL ── */
+  .adm-tab-nav { display:flex; gap:2px; border-bottom:1px solid var(--border-soft); margin-bottom:1.1rem; }
+  .adm-tab-btn { padding:7px 16px; border:none; background:transparent; cursor:pointer; font-size:0.82rem; font-weight:600; color:var(--text-muted); border-bottom:2px solid transparent; margin-bottom:-1px; transition:0.12s; text-transform: uppercase;}
+  .adm-tab-btn.active { color:var(--primary); border-bottom-color:var(--primary); }
+  .adm-tab-panel { display:none; }
+  .adm-tab-panel.active { display:block; }
+</style>
+
+<div class="fade-in" style="padding: 16px; max-width: 1100px; margin: 0 auto; padding-bottom: 60px;">
+
+  <div style="margin-bottom: 20px;">
+    <h2 style="font-size: 1.75rem; font-weight: 800; color: var(--text-main); letter-spacing: -0.02em;">Gestión de Agentes</h2>
+    <p style="color: var(--text-muted); font-size: 0.95rem; margin-top: 4px;">Administración del personal de la institución</p>
   </div>
 
-  <div class="ficha-card" style="margin-bottom: 25px; padding: 20px; border-top: 4px solid var(--primary);">
-    <div style="font-size: 0.85rem; font-weight: 800; color: var(--text-main); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 18px; display: flex; justify-content: space-between; align-items: center;">
-      <span><i class="fas fa-filter" style="color: var(--primary); margin-right: 6px;"></i> Filtros y Estadísticas</span>
-      <button class="btn btn-primary" onclick="AdminAgentes.abrirModal()">
-        <i class="fas fa-user-plus" style="margin-right:5px;"></i> Nuevo Agente
+  <div class="adm-action-bar">
+    <div class="adm-search-container">
+      <div class="adm-search-input">
+        <i class="fas fa-search"></i>
+        <input type="text" id="adm-ag-busqueda" placeholder="Buscar por Apellido, Nombre o DNI..." oninput="AdminAgentes._filtrarLocal()">
+      </div>
+      <button class="btn btn-outline btn-mobile-grow" onclick="AdminAgentes.toggleFiltrosPanel()" id="btn-toggle-filtros-ag" title="Mostrar Estadísticas y Filtros">
+        <i class="fas fa-chart-pie"></i> <span class="adm-btn-text">Panel</span>
+      </button>
+    </div>
+    
+    <button class="btn btn-primary btn-mobile-full" onclick="AdminAgentes.abrirModal()" style="padding: 10px 20px; box-shadow: var(--shadow-md); white-space: nowrap;">
+      <i class="fas fa-user-plus"></i> <span style="margin-left: 5px;">Nuevo Agente</span>
+    </button>
+  </div>
+
+  <div id="adm-ag-filtros-panel" class="adm-filter-panel">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+      <span style="font-weight: 800; color: var(--text-main); font-size: 0.95rem;">
+        <i class="fas fa-chart-bar" style="color: var(--primary); margin-right: 6px;"></i> Estadísticas y Filtros
+      </span>
+      <button class="btn btn-outline" style="padding: 6px 12px; font-size: 0.75rem;" onclick="AdminAgentes.limpiarFiltros()">
+        <i class="fas fa-eraser"></i> Limpiar
       </button>
     </div>
 
-    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; align-items: end; margin-bottom: 20px;">
+    <div class="adm-stats-row" style="margin-bottom: 20px; padding-bottom: 20px; border-bottom: 1px dashed var(--border-soft);">
+      <div class="adm-stat-card">
+        <div class="adm-stat-icon p"><i class="fas fa-users"></i></div>
+        <div><div class="adm-stat-label">Total Registrados</div><div class="adm-stat-val" id="adm-ag-stat-total">0</div></div>
+      </div>
+      <div class="adm-stat-card">
+        <div class="adm-stat-icon g"><i class="fas fa-user-check"></i></div>
+        <div><div class="adm-stat-label">Activos</div><div class="adm-stat-val" id="adm-ag-stat-activos">0</div></div>
+      </div>
+      <div class="adm-stat-card">
+        <div class="adm-stat-icon r"><i class="fas fa-user-slash"></i></div>
+        <div><div class="adm-stat-label">Inactivos</div><div class="adm-stat-val" id="adm-ag-stat-inactivos">0</div></div>
+      </div>
+    </div>
+
+    <div class="adm-filter-grid">
       <div style="display: flex; flex-direction: column; gap: 6px;">
-        <span style="font-size: 0.7rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Área Asignada</span>
+        <span class="adm-stat-label">Área Asignada</span>
         <select id="adm-ag-filtro-area" class="form-input" style="padding: 10px 14px;" onchange="AdminAgentes.cargar()">
           <option value="">Todas las áreas</option>
         </select>
       </div>
       <div style="display: flex; flex-direction: column; gap: 6px;">
-        <span style="font-size: 0.7rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Estado del Agente</span>
+        <span class="adm-stat-label">Estado del Agente</span>
         <select id="adm-ag-filtro-estado" class="form-input" style="padding: 10px 14px;" onchange="AdminAgentes.cargar()">
           <option value="">Todos</option>
           <option value="true" selected>Activos</option>
           <option value="false">Inactivos</option>
         </select>
       </div>
-    </div>
-    
-    <div style="display: flex; gap: 25px; border-top: 1px solid var(--border-soft); padding-top: 15px; flex-wrap: wrap;">
-       <div style="display: flex; align-items: center; gap: 10px;">
-         <div style="width: 38px; height: 38px; border-radius: 8px; background: var(--primary-light); color: var(--primary); display: flex; align-items: center; justify-content: center;"><i class="fas fa-users"></i></div>
-         <div><div style="font-size: 0.7rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Total</div><div id="adm-ag-stat-total" style="font-weight: 800; font-size: 1.1rem; color: var(--text-main);">0</div></div>
-       </div>
-       <div style="display: flex; align-items: center; gap: 10px;">
-         <div style="width: 38px; height: 38px; border-radius: 8px; background: #EAF3DE; color: #3B6D11; display: flex; align-items: center; justify-content: center;"><i class="fas fa-user-check"></i></div>
-         <div><div style="font-size: 0.7rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Activos</div><div id="adm-ag-stat-activos" style="font-weight: 800; font-size: 1.1rem; color: var(--text-main);">0</div></div>
-       </div>
-       <div style="display: flex; align-items: center; gap: 10px;">
-         <div style="width: 38px; height: 38px; border-radius: 8px; background: #FCEBEB; color: #A32D2D; display: flex; align-items: center; justify-content: center;"><i class="fas fa-user-slash"></i></div>
-         <div><div style="font-size: 0.7rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Inactivos</div><div id="adm-ag-stat-inactivos" style="font-weight: 800; font-size: 1.1rem; color: var(--text-main);">0</div></div>
-       </div>
     </div>
   </div>
 
